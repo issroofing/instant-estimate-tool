@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Instant Quote</title>
+    <meta charset='utf-8'>
+    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
+    <link rel="stylesheet" type="text/css" href="style.css">
+    <script src="app.js" type="module"></script>
+    <link rel='stylesheet' href='https://unpkg.com/maplibre-gl@4.3.2/dist/maplibre-gl.css' />
+    <script src='https://unpkg.com/maplibre-gl@4.3.2/dist/maplibre-gl.js'></script>
+    <!-- Import MapTiler Geocoding Control -->
+    <script src="https://unpkg.com/@maptiler/geocoding-control@latest/maplibregl.umd.js"></script>
+    <link href="https://unpkg.com/@maptiler/geocoding-control@latest/style.css" rel="stylesheet" />
+
+    <!-- Import Turff.js from unpkg -->
+    <script src="https://unpkg.com/@turf/turf@latest"></script>
+</head>
+<body>
+
+    <h1>Instant Quote</h1>
+    
+    <div id="iq-main">
+
+        <div id="iq-top-container">
+
+        </div>
+
+        <div id="iq-middle-container">
+            <div id="iq-map-wrapper">
+                <div id="iq-map"></div>
+            </div>
+        </div>
+
+        <div id="iq-bottom-container">
+            <ul id="iq-structure-list"></ul>
+            <button id="iq-get-quote" class="iq-button" disabled>See Pricing</button>
+        </div>
+
+    </div>
+
+    
+</body>
+</html>
