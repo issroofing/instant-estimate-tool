@@ -139,6 +139,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             }
 
+            // Debug: Log the hovered feature to understand tile fragmentation
+            const hoveredFeature = e.features[0];
+            console.log('Hovered feature ID:', hoveredFeature.id);
+            console.log('Hovered feature properties:', hoveredFeature.properties);
+            console.log('Hovered geometry type:', hoveredFeature.geometry.type);
+            console.log('Hovered geometry bbox:', turf.bbox(hoveredFeature));
             
             // Quick and dirty way to get the coordinates of the building
             const buildings = e.features[0].geometry.coordinates
@@ -648,130 +654,268 @@ document.addEventListener('DOMContentLoaded', function () {
         const feature = features[0];
         console.log('Found feature:');
         console.log(feature);
+        
+        // Debug: Log feature properties to understand what identifiers are available
+        console.log('Feature properties:', feature.properties);
+        console.log('Feature ID:', feature.id);
+        
+        // Query ALL building features from the source to see if we can find matching fragments
+        const allBuildingFeatures = map.querySourceFeatures('maptiler-world', {
+            sourceLayer: 'building'
+        });
+        console.log('Total building features in loaded tiles:', allBuildingFeatures.length);
+        
         const geometry = feature.geometry;
         
-        let perimeterToSelect = null;
+        let clickedPolygon = null;
 
         if (geometry.type === 'MultiPolygon') {
             const buildings = geometry.coordinates;
             for (let i = 0; i < buildings.length; i++) {
                 const perimeter = buildings[i][0];
                 if (turf.booleanPointInPolygon([lng, lat], turf.polygon([perimeter]))) {
-                    perimeterToSelect = perimeter;
+                    clickedPolygon = turf.polygon([perimeter]);
                     break;
                 }
             }
         } else if (geometry.type === 'Polygon') {
             const perimeter = geometry.coordinates[0];
             if (turf.booleanPointInPolygon([lng, lat], turf.polygon([perimeter]))) {
-                perimeterToSelect = perimeter;
+                clickedPolygon = turf.polygon([perimeter]);
             }
         }
 
-        if (perimeterToSelect) {
-            const perimeter = perimeterToSelect;
-            console.log('Selected building perimeter:');
-            console.log(perimeter);
+        if (!clickedPolygon) {
+            console.log('Could not find clicked polygon');
+            return;
+        }
 
-            const centerPoint = turf.centerOfMass(turf.polygon([perimeter]));
+        console.log('Initial clicked polygon bbox:', turf.bbox(clickedPolygon));
 
-            const sourceName = buildingUUID + '-source';
-            const layerFillName = buildingUUID + '-layer-fill';
-            const layerOutlineName = buildingUUID + '-layer-outline';
-            const layerLabelName = buildingUUID + '-layer-label';
-            const sourceLabelName = buildingUUID + '-source-label';
+        // Now try to find and merge adjacent building fragments
+        const mergedPolygon = findAndMergeAdjacentFragments(clickedPolygon, allBuildingFeatures);
+        const finalPerimeter = mergedPolygon.geometry.coordinates[0];
+        
+        console.log('Final merged polygon bbox:', turf.bbox(mergedPolygon));
+        console.log('Selected building perimeter:');
+        console.log(finalPerimeter);
+
+        const perimeter = finalPerimeter;
+        const centerPoint = turf.centerOfMass(turf.polygon([perimeter]));
+
+        const sourceName = buildingUUID + '-source';
+        const layerFillName = buildingUUID + '-layer-fill';
+        const layerOutlineName = buildingUUID + '-layer-outline';
+        const layerLabelName = buildingUUID + '-layer-label';
+        const sourceLabelName = buildingUUID + '-source-label';
+        
+        // Add an empty geojson source
+        map.addSource(sourceName, {
+            type: 'geojson',
+            data: {
+                type: 'FeatureCollection',
+                features: [
+                    {
+                        type: 'Feature',
+                        geometry: {
+                            type: 'Polygon',
+                            coordinates: [perimeter]
+                        }
+                    }
+                ]
+            }
+        });
+
+        // Add a layer to the map
+        map.addLayer({
+            id: layerFillName,
+            type: 'fill',
+            source: sourceName,
+            paint: {
+                'fill-color': '#0a84ff',
+                'fill-opacity': 0.5
+            }
+        });
+
+        map.addLayer({
+            id: layerOutlineName,
+            type: 'line',
+            source: sourceName,
+            paint: {
+                'line-color': '#0a84ff',
+                'line-width': 3
+            }
+        });
+
+        // Add a label at the centerPoint
+
+        map.addSource(sourceLabelName, {
+            type: 'geojson',
+            data: {
+                type: 'Feature',
+                geometry: {
+                    type: 'Point',
+                    coordinates: centerPoint.geometry.coordinates
+                },
+                properties: {
+                    title: logicalIndex(selectedBuildings.length) + ' Structure'
+                }
+            }
+        });
+
+        map.addLayer({
+            id: layerLabelName,
+            type: 'symbol',
+            source: sourceLabelName,
+            layout: {
+                'text-field': ['get', 'title'],
+                'text-font': ['Arial Bold'],
+                'text-size': 12,
+                'text-allow-overlap': true
+            },
+            paint: {
+                'text-color': '#ffffff',
+                'text-halo-color': '#0a84ff',
+                'text-halo-width': 2
+            }
+        });
+
+        const area = turf.area(turf.polygon([perimeter])); // in square meters
+        const areaSqft = area * 10.7639; // in square feet
+
+        selectedBuildings.push({
+            source: sourceName,
+            layerFill: layerFillName,
+            layerOutline: layerOutlineName,
+            layerLabel: layerLabelName,
+            sourceLabel: sourceLabelName,
+            polygon: perimeter,
+            center: centerPoint,
+            area: areaSqft,
+            roofPitch: 'medium'
+        });
+
+        updateStructureListUI();
+        updateGetQuoteButton();
+
+        buildingUUID++;
+    }
+
+    // MARK: - findAndMergeAdjacentFragments
+    // This function finds building fragments that share edges (due to tile boundaries)
+    // and merges them into a single polygon
+    function findAndMergeAdjacentFragments(startPolygon, allFeatures) {
+        let merged = startPolygon;
+        
+        // Extract all polygons from the features with their bbox
+        const allPolygons = [];
+        allFeatures.forEach(feature => {
+            if (feature.geometry.type === 'MultiPolygon') {
+                feature.geometry.coordinates.forEach(coords => {
+                    if (coords[0] && coords[0].length > 2) {
+                        const poly = turf.polygon([coords[0]]);
+                        const bbox = turf.bbox(poly);
+                        allPolygons.push({
+                            polygon: poly,
+                            bbox: bbox,
+                            bboxKey: bbox.join(',')
+                        });
+                    }
+                });
+            } else if (feature.geometry.type === 'Polygon') {
+                if (feature.geometry.coordinates[0] && feature.geometry.coordinates[0].length > 2) {
+                    const poly = turf.polygon([feature.geometry.coordinates[0]]);
+                    const bbox = turf.bbox(poly);
+                    allPolygons.push({
+                        polygon: poly,
+                        bbox: bbox,
+                        bboxKey: bbox.join(',')
+                    });
+                }
+            }
+        });
+        
+        console.log('Total polygons available:', allPolygons.length);
+        
+        // Track which polygons we've already merged (by bbox key)
+        const mergedBboxKeys = new Set();
+        const startBboxKey = turf.bbox(startPolygon).join(',');
+        mergedBboxKeys.add(startBboxKey);
+        
+        let mergedAny = true;
+        let iterations = 0;
+        const maxIterations = 10;
+        
+        // Helper function to check if two bboxes are close enough to potentially touch
+        // bbox format: [minX, minY, maxX, maxY]
+        const bboxBuffer = 0.0002; // ~20m buffer for bbox check
+        function bboxesOverlap(bbox1, bbox2) {
+            return !(bbox2[0] > bbox1[2] + bboxBuffer || // bbox2 is right of bbox1
+                     bbox2[2] < bbox1[0] - bboxBuffer || // bbox2 is left of bbox1
+                     bbox2[1] > bbox1[3] + bboxBuffer || // bbox2 is above bbox1
+                     bbox2[3] < bbox1[1] - bboxBuffer);  // bbox2 is below bbox1
+        }
+        
+        // Keep trying to merge until no more merges are possible
+        while (mergedAny && iterations < maxIterations) {
+            mergedAny = false;
+            iterations++;
             
-            // Add an empty geojson source
-            map.addSource(sourceName, {
-                type: 'geojson',
-                data: {
-                    type: 'FeatureCollection',
-                    features: [
-                        {
-                            type: 'Feature',
-                            geometry: {
-                                type: 'Polygon',
-                                coordinates: [perimeter]
+            const mergedBbox = turf.bbox(merged);
+            
+            // Pre-filter: only check polygons whose bbox overlaps with merged bbox
+            const candidates = allPolygons.filter(p => 
+                !mergedBboxKeys.has(p.bboxKey) && bboxesOverlap(mergedBbox, p.bbox)
+            );
+            
+            if (iterations === 1) {
+                console.log('Candidates after bbox filter:', candidates.length);
+            }
+            
+            for (let i = 0; i < candidates.length; i++) {
+                const candidateObj = candidates[i];
+                const candidate = candidateObj.polygon;
+                
+                // Check if polygons actually touch/overlap
+                try {
+                    const bufferedMerged = turf.buffer(merged, 0.0001, { units: 'kilometers' });
+                    const intersects = turf.booleanIntersects(bufferedMerged, candidate);
+                    
+                    if (intersects) {
+                        const unionResult = turf.union(merged, candidate);
+                        
+                        if (unionResult && unionResult.geometry) {
+                            mergedBboxKeys.add(candidateObj.bboxKey);
+                            
+                            if (unionResult.geometry.type === 'Polygon') {
+                                merged = unionResult;
+                                mergedAny = true;
+                            } else if (unionResult.geometry.type === 'MultiPolygon') {
+                                let largestArea = 0;
+                                let largestPolygon = null;
+                                unionResult.geometry.coordinates.forEach(coords => {
+                                    const poly = turf.polygon(coords);
+                                    const area = turf.area(poly);
+                                    if (area > largestArea) {
+                                        largestArea = area;
+                                        largestPolygon = poly;
+                                    }
+                                });
+                                if (largestPolygon) {
+                                    merged = largestPolygon;
+                                    mergedAny = true;
+                                }
                             }
                         }
-                    ]
-                }
-            });
-
-            // Add a layer to the map
-            map.addLayer({
-                id: layerFillName,
-                type: 'fill',
-                source: sourceName,
-                paint: {
-                    'fill-color': '#0a84ff',
-                    'fill-opacity': 0.5
-                }
-            });
-
-            map.addLayer({
-                id: layerOutlineName,
-                type: 'line',
-                source: sourceName,
-                paint: {
-                    'line-color': '#0a84ff',
-                    'line-width': 3
-                }
-            });
-
-            // Add a label at the centerPoint
-
-            map.addSource(sourceLabelName, {
-                type: 'geojson',
-                data: {
-                    type: 'Feature',
-                    geometry: {
-                        type: 'Point',
-                        coordinates: centerPoint.geometry.coordinates
-                    },
-                    properties: {
-                        title: logicalIndex(selectedBuildings.length) + ' Structure'
                     }
+                } catch (e) {
+                    console.log('Error during merge attempt:', e);
                 }
-            });
-
-            map.addLayer({
-                id: layerLabelName,
-                type: 'symbol',
-                source: sourceLabelName,
-                layout: {
-                    'text-field': ['get', 'title'],
-                    'text-font': ['Arial Bold'],
-                    'text-size': 12,
-                    'text-allow-overlap': true
-                },
-                paint: {
-                    'text-color': '#ffffff',
-                    'text-halo-color': '#0a84ff',
-                    'text-halo-width': 2
-                }
-            });
-
-            const area = turf.area(turf.polygon([perimeter])); // in square meters
-            const areaSqft = area * 10.7639; // in square feet
-
-            selectedBuildings.push({
-                source: sourceName,
-                layerFill: layerFillName,
-                layerOutline: layerOutlineName,
-                layerLabel: layerLabelName,
-                sourceLabel: sourceLabelName,
-                polygon: perimeter,
-                center: centerPoint,
-                area: areaSqft,
-                roofPitch: 'medium'
-            });
-
-            updateStructureListUI();
-            updateGetQuoteButton();
-
-            buildingUUID++;
+            }
         }
+        
+        console.log('Merge complete after', iterations, 'iterations, merged', mergedBboxKeys.size, 'fragments');
+        return merged;
     }
 
 });
