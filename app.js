@@ -139,56 +139,73 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             }
 
-            // Debug: Log the hovered feature to understand tile fragmentation
-            const hoveredFeature = e.features[0];
-            console.log('Hovered feature ID:', hoveredFeature.id);
-            console.log('Hovered feature properties:', hoveredFeature.properties);
-            console.log('Hovered geometry type:', hoveredFeature.geometry.type);
-            console.log('Hovered geometry bbox:', turf.bbox(hoveredFeature));
-            
-            // Quick and dirty way to get the coordinates of the building
-            const buildings = e.features[0].geometry.coordinates
-            for (let i = 0; i < buildings.length; i++) {
-                const perimeter = buildings[i][0];
+            // Find the polygon under the cursor
+            const geometry = e.features[0].geometry;
+            let hoveredPolygon = null;
+
+            if (geometry.type === 'MultiPolygon') {
+                const buildings = geometry.coordinates;
+                for (let i = 0; i < buildings.length; i++) {
+                    const perimeter = buildings[i][0];
+                    if (turf.booleanPointInPolygon([pointer.lng, pointer.lat], turf.polygon([perimeter]))) {
+                        hoveredPolygon = turf.polygon([perimeter]);
+                        break;
+                    }
+                }
+            } else if (geometry.type === 'Polygon') {
+                const perimeter = geometry.coordinates[0];
                 if (turf.booleanPointInPolygon([pointer.lng, pointer.lat], turf.polygon([perimeter]))) {
-                    //console.log(perimeter);
-                    map.addSource('highlighted-building', {
-                        type: 'geojson',
-                        data: {
-                            type: 'FeatureCollection',
-                            features: [
-                                {
-                                    type: 'Feature',
-                                    geometry: {
-                                        type: 'Polygon',
-                                        coordinates: [perimeter]
-                                    }
-                                }
-                            ]
-                        }
-                    });
-
-                    map.addLayer({
-                        id: 'highlighted-building-layer',
-                        type: 'fill',
-                        source: 'highlighted-building',
-                        paint: {
-                            'fill-color': '#007aff',
-                            'fill-opacity': 0.1
-                        }
-                    });
-
-                    map.addLayer({
-                        id: 'highlighted-building-outline',
-                        type: 'line',
-                        source: 'highlighted-building',
-                        paint: {
-                            'line-color': '#007aff',
-                            'line-width': 3
-                        }
-                    });
+                    hoveredPolygon = turf.polygon([perimeter]);
                 }
             }
+
+            if (!hoveredPolygon) {
+                return;
+            }
+
+            // Query all building features and merge adjacent fragments
+            const allBuildingFeatures = map.querySourceFeatures('maptiler-world', {
+                sourceLayer: 'building'
+            });
+            
+            const mergedPolygon = findAndMergeAdjacentFragments(hoveredPolygon, allBuildingFeatures);
+            const finalPerimeter = mergedPolygon.geometry.coordinates[0];
+
+            map.addSource('highlighted-building', {
+                type: 'geojson',
+                data: {
+                    type: 'FeatureCollection',
+                    features: [
+                        {
+                            type: 'Feature',
+                            geometry: {
+                                type: 'Polygon',
+                                coordinates: [finalPerimeter]
+                            }
+                        }
+                    ]
+                }
+            });
+
+            map.addLayer({
+                id: 'highlighted-building-layer',
+                type: 'fill',
+                source: 'highlighted-building',
+                paint: {
+                    'fill-color': '#007aff',
+                    'fill-opacity': 0.1
+                }
+            });
+
+            map.addLayer({
+                id: 'highlighted-building-outline',
+                type: 'line',
+                source: 'highlighted-building',
+                paint: {
+                    'line-color': '#007aff',
+                    'line-width': 3
+                }
+            });
         });
         
         map.on('mouseleave', 'maptiler-world-layer', function (e) {
@@ -642,8 +659,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // MARK: - selectBuildingAtLngLat
     function selectBuildingAtLngLat(lng, lat) {
-        console.log('Selecting building at ' + lng + ', ' + lat);
-        
         const point = map.project([lng, lat]);
         const features = map.queryRenderedFeatures(point, { layers: ['maptiler-world-layer'] });
 
@@ -652,18 +667,11 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         const feature = features[0];
-        console.log('Found feature:');
-        console.log(feature);
         
-        // Debug: Log feature properties to understand what identifiers are available
-        console.log('Feature properties:', feature.properties);
-        console.log('Feature ID:', feature.id);
-        
-        // Query ALL building features from the source to see if we can find matching fragments
+        // Query all building features from the source for merging
         const allBuildingFeatures = map.querySourceFeatures('maptiler-world', {
             sourceLayer: 'building'
         });
-        console.log('Total building features in loaded tiles:', allBuildingFeatures.length);
         
         const geometry = feature.geometry;
         
@@ -686,19 +694,12 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         if (!clickedPolygon) {
-            console.log('Could not find clicked polygon');
             return;
         }
 
-        console.log('Initial clicked polygon bbox:', turf.bbox(clickedPolygon));
-
-        // Now try to find and merge adjacent building fragments
+        // Find and merge adjacent building fragments
         const mergedPolygon = findAndMergeAdjacentFragments(clickedPolygon, allBuildingFeatures);
         const finalPerimeter = mergedPolygon.geometry.coordinates[0];
-        
-        console.log('Final merged polygon bbox:', turf.bbox(mergedPolygon));
-        console.log('Selected building perimeter:');
-        console.log(finalPerimeter);
 
         const perimeter = finalPerimeter;
         const centerPoint = turf.centerOfMass(turf.polygon([perimeter]));
@@ -835,8 +836,6 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
         
-        console.log('Total polygons available:', allPolygons.length);
-        
         // Track which polygons we've already merged (by bbox key)
         const mergedBboxKeys = new Set();
         const startBboxKey = turf.bbox(startPolygon).join(',');
@@ -867,10 +866,6 @@ document.addEventListener('DOMContentLoaded', function () {
             const candidates = allPolygons.filter(p => 
                 !mergedBboxKeys.has(p.bboxKey) && bboxesOverlap(mergedBbox, p.bbox)
             );
-            
-            if (iterations === 1) {
-                console.log('Candidates after bbox filter:', candidates.length);
-            }
             
             for (let i = 0; i < candidates.length; i++) {
                 const candidateObj = candidates[i];
@@ -909,12 +904,11 @@ document.addEventListener('DOMContentLoaded', function () {
                         }
                     }
                 } catch (e) {
-                    console.log('Error during merge attempt:', e);
+                    // Silently handle merge errors
                 }
             }
         }
         
-        console.log('Merge complete after', iterations, 'iterations, merged', mergedBboxKeys.size, 'fragments');
         return merged;
     }
 
