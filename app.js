@@ -3,7 +3,7 @@
 // On DOM load, initialize the map
 
 document.addEventListener('DOMContentLoaded', function () {
-    const debug = true;
+    const debug = false;
     const MAPTILER_API_KEY = "BkQkq2NwcJAaCLNx663p";
 
     const map = new maplibregl.Map({
@@ -300,7 +300,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             setTimeout(() => {
                 // wait until the map is idle again
-                //map.once('idle', function () {
+                map.once('idle', function () {
                     // Set the map to interactive
                     map.dragPan.enable();
                     map.scrollZoom.enable();
@@ -310,7 +310,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     map.doubleClickZoom.enable();
 
                     selectBuildingAtLngLat(coords[0], coords[1]);
-                //});
+                });
             }, 10);
             
         });
@@ -635,162 +635,142 @@ document.addEventListener('DOMContentLoaded', function () {
 
 
     // MARK: - selectBuildingAtLngLat
-    async function selectBuildingAtLngLat(lng, lat) {
+    function selectBuildingAtLngLat(lng, lat) {
         console.log('Selecting building at ' + lng + ', ' + lat);
-        const tile = getTileForLatLon(lat, lng, 15);
+        
+        const point = map.project([lng, lat]);
+        const features = map.queryRenderedFeatures(point, { layers: ['maptiler-world-layer'] });
 
-        const buildingsCenter = await getBuildingsForTile(tile.x, tile.y, tile.z);
-        console.log('Center buildings: ' + buildingsCenter.length);
-        // Save buildingsCenter json to a file
-        const json = JSON.stringify(buildingsCenter);
-        // create a blob object
-        const blob = new Blob([json], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        // create a link element
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "buildingsCenter.json";
-        // trigger the download
-        a.click();
+        if (features.length === 0) {
+            return;
+        }
 
-        const buildingsWest = await getBuildingsForTile(tile.x - 1, tile.y, tile.z);
-        console.log('West buildings: ' + buildingsWest.length);
-        // Save buildingsWest json to a file
-        const jsonWest = JSON.stringify(buildingsWest);
-        // create a blob object
-        const blobWest = new Blob([jsonWest], { type: "application/json" });
-        const urlWest = URL.createObjectURL(blobWest);
-        // create a link element
-        const aWest = document.createElement("a");
-        aWest.href = urlWest;
-        aWest.download = "buildingsWest.json";
-        // trigger the download
-        aWest.click();
+        const feature = features[0];
+        console.log('Found feature:');
+        console.log(feature);
+        const geometry = feature.geometry;
+        
+        let perimeterToSelect = null;
 
-
-        const buildings = buildingsCenter.concat(buildingsWest);
-        console.log('Total buildings: ' + buildings.length);
-
-        for (let i = 0; i < buildings.length; i++) {
-            var perimeter = buildings[i];
-            var newPerimeter = perimeter;
+        if (geometry.type === 'MultiPolygon') {
+            const buildings = geometry.coordinates;
+            for (let i = 0; i < buildings.length; i++) {
+                const perimeter = buildings[i][0];
+                if (turf.booleanPointInPolygon([lng, lat], turf.polygon([perimeter]))) {
+                    perimeterToSelect = perimeter;
+                    break;
+                }
+            }
+        } else if (geometry.type === 'Polygon') {
+            const perimeter = geometry.coordinates[0];
             if (turf.booleanPointInPolygon([lng, lat], turf.polygon([perimeter]))) {
-                console.log(perimeter);
+                perimeterToSelect = perimeter;
+            }
+        }
 
-                var buildingsToCheck = buildings;
+        if (perimeterToSelect) {
+            const perimeter = perimeterToSelect;
+            console.log('Selected building perimeter:');
+            console.log(perimeter);
 
-                console.log('Checking for overlaps with ' + buildingsToCheck.length + ' buildings');
-                for (let j = 0; j < buildings.length; j++) {
-                    const otherPerimeter = buildings[j];
-                    if (perimeter !== otherPerimeter && turf.booleanIntersects(turf.polygon([perimeter]), turf.polygon([otherPerimeter]))) {
-                        newPerimeter = turf.union(turf.featureCollection([turf.polygon([perimeter]), turf.polygon([otherPerimeter])]));
-                        buildingsToCheck.splice(j, 1);
+            const centerPoint = turf.centerOfMass(turf.polygon([perimeter]));
 
-                        perimeter = newPerimeter.geometry.coordinates[0];
+            const sourceName = buildingUUID + '-source';
+            const layerFillName = buildingUUID + '-layer-fill';
+            const layerOutlineName = buildingUUID + '-layer-outline';
+            const layerLabelName = buildingUUID + '-layer-label';
+            const sourceLabelName = buildingUUID + '-source-label';
+            
+            // Add an empty geojson source
+            map.addSource(sourceName, {
+                type: 'geojson',
+                data: {
+                    type: 'FeatureCollection',
+                    features: [
+                        {
+                            type: 'Feature',
+                            geometry: {
+                                type: 'Polygon',
+                                coordinates: [perimeter]
+                            }
+                        }
+                    ]
+                }
+            });
+
+            // Add a layer to the map
+            map.addLayer({
+                id: layerFillName,
+                type: 'fill',
+                source: sourceName,
+                paint: {
+                    'fill-color': '#0a84ff',
+                    'fill-opacity': 0.5
+                }
+            });
+
+            map.addLayer({
+                id: layerOutlineName,
+                type: 'line',
+                source: sourceName,
+                paint: {
+                    'line-color': '#0a84ff',
+                    'line-width': 3
+                }
+            });
+
+            // Add a label at the centerPoint
+
+            map.addSource(sourceLabelName, {
+                type: 'geojson',
+                data: {
+                    type: 'Feature',
+                    geometry: {
+                        type: 'Point',
+                        coordinates: centerPoint.geometry.coordinates
+                    },
+                    properties: {
+                        title: logicalIndex(selectedBuildings.length) + ' Structure'
                     }
                 }
+            });
 
-                console.log(perimeter);
+            map.addLayer({
+                id: layerLabelName,
+                type: 'symbol',
+                source: sourceLabelName,
+                layout: {
+                    'text-field': ['get', 'title'],
+                    'text-font': ['Arial Bold'],
+                    'text-size': 12,
+                    'text-allow-overlap': true
+                },
+                paint: {
+                    'text-color': '#ffffff',
+                    'text-halo-color': '#0a84ff',
+                    'text-halo-width': 2
+                }
+            });
 
-                const centerPoint = turf.centerOfMass(turf.polygon([perimeter]));
+            const area = turf.area(turf.polygon([perimeter])); // in square meters
+            const areaSqft = area * 10.7639; // in square feet
 
-                const sourceName = buildingUUID + '-source';
-                const layerFillName = buildingUUID + '-layer-fill';
-                const layerOutlineName = buildingUUID + '-layer-outline';
-                const layerLabelName = buildingUUID + '-layer-label';
-                const sourceLabelName = buildingUUID + '-source-label';
-                
-                // Add an empty geojson source
-                map.addSource(sourceName, {
-                    type: 'geojson',
-                    data: {
-                        type: 'FeatureCollection',
-                        features: [
-                            {
-                                type: 'Feature',
-                                geometry: {
-                                    type: 'Polygon',
-                                    coordinates: [perimeter]
-                                }
-                            }
-                        ]
-                    }
-                });
+            selectedBuildings.push({
+                source: sourceName,
+                layerFill: layerFillName,
+                layerOutline: layerOutlineName,
+                layerLabel: layerLabelName,
+                sourceLabel: sourceLabelName,
+                polygon: perimeter,
+                center: centerPoint,
+                area: areaSqft,
+                roofPitch: 'medium'
+            });
 
-                // Add a layer to the map
-                map.addLayer({
-                    id: layerFillName,
-                    type: 'fill',
-                    source: sourceName,
-                    paint: {
-                        'fill-color': '#0a84ff',
-                        'fill-opacity': 0.5
-                    }
-                });
+            updateStructureListUI();
+            updateGetQuoteButton();
 
-                map.addLayer({
-                    id: layerOutlineName,
-                    type: 'line',
-                    source: sourceName,
-                    paint: {
-                        'line-color': '#0a84ff',
-                        'line-width': 3
-                    }
-                });
-
-                // Add a label at the centerPoint
-
-                map.addSource(sourceLabelName, {
-                    type: 'geojson',
-                    data: {
-                        type: 'Feature',
-                        geometry: {
-                            type: 'Point',
-                            coordinates: centerPoint.geometry.coordinates
-                        },
-                        properties: {
-                            title: logicalIndex(selectedBuildings.length) + ' Structure'
-                        }
-                    }
-                });
-
-                map.addLayer({
-                    id: layerLabelName,
-                    type: 'symbol',
-                    source: sourceLabelName,
-                    layout: {
-                        'text-field': ['get', 'title'],
-                        'text-font': ['Arial Bold'],
-                        'text-size': 12,
-                        'text-allow-overlap': true
-                    },
-                    paint: {
-                        'text-color': '#ffffff',
-                        'text-halo-color': '#0a84ff',
-                        'text-halo-width': 2
-                    }
-                });
-
-                const area = turf.area(turf.polygon([perimeter])); // in square meters
-                const areaSqft = area * 10.7639; // in square feet
-
-                selectedBuildings.push({
-                    source: sourceName,
-                    layerFill: layerFillName,
-                    layerOutline: layerOutlineName,
-                    layerLabel: layerLabelName,
-                    sourceLabel: sourceLabelName,
-                    polygon: perimeter,
-                    center: centerPoint,
-                    area: areaSqft,
-                    roofPitch: 'medium'
-                });
-
-                updateStructureListUI();
-                updateGetQuoteButton();
-
-                buildingUUID++;
-            }
+            buildingUUID++;
         }
     }
 
