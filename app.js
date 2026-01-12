@@ -435,7 +435,7 @@ document.addEventListener('DOMContentLoaded', function () {
     function getQuote() {
         var roofArea = 0;
         for (let i = 0; i < selectedBuildings.length; i++) {
-            buildingArea = selectedBuildings[i].area;
+            const buildingArea = selectedBuildings[i].area;
             if (selectedBuildings[i].roofPitch === 'shallow') {
                 roofArea += buildingArea * 1.1;
             }
