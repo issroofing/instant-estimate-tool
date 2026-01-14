@@ -14,23 +14,360 @@ body h1 {
     color: white;
 }
 
+.w-dyn-list {
+    display: none;
+}
+
 #iq-main {
     background-color: white;
     height: auto;
     width: 600px;
+    max-width: 100%;
     display: flex;
     flex-direction: column;
     gap: 16px;
     padding: 16px;
     border-radius: 16px;
     box-shadow: 0 0 40px rgba(255, 255, 255, 0.2);
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+/* Step Indicator */
+#iq-step-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px 0;
+    gap: 4px;
+}
+
+.iq-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    opacity: 0.4;
+    transition: opacity 0.3s ease;
+}
+
+.iq-step.iq-step-active,
+.iq-step.iq-step-completed {
+    opacity: 1;
+}
+
+.iq-step-number {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background-color: #cfd8e2;
+    color: #4a5d74;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 12px;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.iq-step.iq-step-active .iq-step-number {
+    background-color: #007aff;
+    color: white;
+}
+
+.iq-step.iq-step-completed .iq-step-number {
+    background-color: #34c759;
+    color: white;
+}
+
+.iq-step-label {
+    font-size: 10px;
+    color: #4a5d74;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.iq-step-connector {
+    width: 20px;
+    height: 2px;
+    background-color: #cfd8e2;
+    margin-bottom: 18px;
+}
+
+/* Option List (Categories/Services) */
+.iq-option-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.iq-option-card {
+    display: flex;
+    align-items: center;
+    padding: 16px 20px;
+    background-color: #f2f4f8;
+    border: 2px solid transparent;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 1.1em;
+    font-weight: 500;
+    color: #0e1012;
+}
+
+.iq-option-card:hover {
+    background-color: #e8ebf0;
+    border-color: #007aff;
+}
+
+.iq-option-card.iq-active {
+    background-color: #f0f7ff;
+    border-color: #007aff;
+}
+
+.iq-option-card-icon {
+    margin-right: 12px;
+    font-size: 1.5em;
+}
+
+/* Views */
+.iq-view {
+    display: none;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.iq-view.iq-view-active {
+    display: flex;
+}
+
+.iq-view-title {
+    margin: 0;
+    font-size: 1.5em;
+    color: #0e1012;
+    text-align: center;
+}
+
+.iq-view-subtitle {
+    margin: 0;
+    color: #637182;
+    text-align: center;
+    font-size: 0.95em;
+}
+
+/* Step 3 - Find Property */
+#iq-step3-bottom {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+#iq-step3-hint {
+    margin: 0;
+    color: #637182;
+    font-size: 0.9em;
+    text-align: center;
+}
+
+#iq-selected-summary {
+    text-align: center;
+    font-weight: 500;
+    color: #007aff;
+    min-height: 1.2em;
+}
+
+/* Structure Questions */
+.iq-structure-questions {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-left: auto;
+}
+
+.iq-question-group {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+}
+
+/* Navigation Buttons */
+.iq-nav-buttons {
+    display: flex;
+    gap: 12px;
+    margin-top: 8px;
+}
+
+.iq-nav-buttons .iq-button {
+    flex: 1;
+}
+
+.iq-button-secondary {
+    background-color: #f2f4f8 !important;
+    color: #4a5d74 !important;
+}
+
+.iq-button-secondary:hover {
+    background-color: #e4e8ed !important;
+}
+
+/* Pricing View */
+#iq-pricing-breakdown {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.iq-pricing-structure {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.iq-pricing-structure-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #e4e8ed;
+}
+
+.iq-pricing-structure-thumbnail {
+    width: 50px;
+    height: 50px;
+    border-radius: 8px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.iq-pricing-structure-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.iq-pricing-structure-name {
+    font-weight: 600;
+    font-size: 1.1em;
+    color: #0e1012;
+}
+
+.iq-pricing-structure-details {
+    font-size: 0.85em;
+    color: #637182;
+}
+
+.iq-pricing-products {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.iq-pricing-product {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    background-color: #f2f4f8;
+    border-radius: 12px;
+    padding: 12px;
+}
+
+.iq-pricing-product-thumb {
+    width: 60px;
+    height: 60px;
+    border-radius: 8px;
+    overflow: hidden;
+    flex-shrink: 0;
+    object-fit: cover;
+}
+
+.iq-pricing-product-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+}
+
+.iq-pricing-product-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.iq-pricing-product-name {
+    font-weight: 600;
+    color: #0e1012;
+    font-size: 0.95em;
+}
+
+.iq-pricing-product-price {
+    font-weight: 600;
+    color: #007aff;
+    white-space: nowrap;
+    font-size: 0.95em;
+}
+
+.iq-pricing-product-brand {
+    height: 18px;
+    width: auto;
+    object-fit: contain;
+    opacity: 0.7;
+}
+
+.iq-pricing-item {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    background-color: #f2f4f8;
+    border-radius: 12px;
+    padding: 12px;
+}
+
+.iq-pricing-thumbnail {
+    width: 60px;
+    height: 60px;
+    border-radius: 8px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.iq-pricing-item-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+}
+
+.iq-pricing-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+.iq-pricing-item-name {
+    font-weight: 600;
+    color: #0e1012;
+}
+
+.iq-pricing-item-price {
+    font-weight: 600;
+    color: #007aff;
+}
+
+.iq-pricing-item-details {
+    font-size: 0.85em;
+    color: #637182;
 }
 
 #iq-map-wrapper {
     width: 600px;
+    max-width: 100%;
     aspect-ratio: 16/9;
     border-radius: 16px;
     overflow: hidden;
+    box-sizing: border-box;
 }
 
 #iq-map {
@@ -42,10 +379,9 @@ body h1 {
     display: flex;
     flex-direction: row;
     align-items: center;
-    justify-content: center;
-    gap: 16px;
+    justify-content: flex-end;
+    gap: 8px;
     background-color: transparent;
-    width: 100%;
 }
 
 .iq-visual-option {
@@ -55,37 +391,64 @@ body h1 {
     flex-direction: column;
     align-items: center;
     text-align: center;
-    flex-grow: 1;
-    background-color: transparent;
+    background-color: white;
     border: 1px solid #cfd8e2;
     border-radius: 8px;
-    padding: 24px;
+    padding: 12px 16px;
     cursor: pointer;
+    transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.iq-visual-option:hover {
+    background-color: #f8f9fa;
 }
 
 .iq-visual-option svg {
-    width: 32px;
-    height: 32px;
+    width: 24px;
+    height: 24px;
     color: #4a5d74;
 }
 
 .iq-visual-option.iq-active {
-    border: 1px solid #007aff;
+    border: 2px solid #007aff;
+    background-color: #f0f7ff;
+}
+
+.iq-visual-option.iq-active svg {
+    color: #007aff;
 }
 
 .iq-visual-option-title {
-    margin-top: 0.75em;
+    margin-top: 0.5em;
+    font-size: 0.8em;
 }
 
 .iq-structure-item {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
-    gap: 0;
+    justify-content: flex-start;
+    gap: 16px;
     background-color: #f2f4f8;
     color: #0e1012;
     border-radius: 16px;
     padding: 16px;
+    flex-wrap: wrap;
+}
+
+.iq-structure-thumbnail {
+    width: 80px;
+    height: 80px;
+    border-radius: 8px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.iq-structure-item-info {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    min-width: 100px;
 }
 
 .iq-structure-item h3 {
@@ -96,11 +459,21 @@ body h1 {
 .iq-structure-item-area {
     font-size: 0.9em;
     color: #637182;
-    margin-bottom: 1em;
+    margin-bottom: 0;
+}
+
+.iq-structure-item-pitch {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    flex: 1;
+    margin-left: auto;
 }
 
 .iq-visual-option-group-title {
     margin-bottom: 0.5em;
+    font-size: 0.85em;
+    color: #4a5d74;
 }
 
 #iq-structure-list {
@@ -177,24 +550,135 @@ body h1 {
         font-size: 16px !important;
     }
 
-
-
     /* Geocoder positioning for mobile */
 
     .maplibregl-ctrl-attrib.maplibregl-compact {
-        margin: 24px;
+        margin: 8px;
     }
 
     .maplibregl-ctrl-top-left .maplibregl-ctrl {
-        margin: 24px;
+        margin: 8px;
+    }
+
+    .maplibregl-ctrl-geocoder {
+        max-width: calc(100% - 16px) !important;
+        width: calc(100% - 16px) !important;
     }
 
     .maplibregl-ctrl-geocoder form {
         font-family: var(--font) !important;
         border-radius: 12px !important;
-        width: calc(100vw - 48px) !important;
-        min-width: calc(100vw - 48px) !important;
-        max-width: calc(100vw - 48px) !important;
+        width: 100% !important;
+        min-width: unset !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+    body {
+        padding: 24px 16px;
+    }
+
+    #iq-main {
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    #iq-map-wrapper {
+        width: 100%;
+        aspect-ratio: 1/1;
+    }
+
+    #iq-step-indicator {
+        gap: 2px;
+        padding: 12px 0;
+    }
+
+    .iq-step-connector {
+        width: 12px;
+    }
+
+    .iq-step-label {
+        font-size: 8px;
+    }
+
+    .iq-step-number {
+        width: 24px;
+        height: 24px;
+        font-size: 11px;
+    }
+
+    .iq-structure-item {
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .iq-structure-thumbnail {
+        width: 100%;
+        height: 120px;
+    }
+
+    .iq-structure-item-info {
+        align-items: center;
+        margin-bottom: 8px;
+    }
+
+    .iq-structure-questions {
+        align-items: center;
+        margin-left: 0;
+        width: 100%;
+    }
+
+    .iq-question-group {
+        align-items: center;
+        width: 100%;
+    }
+
+    .iq-structure-item-pitch {
+        align-items: center;
+        margin-left: 0;
+    }
+
+    .iq-visual-option-group {
+        justify-content: center;
+    }
+
+    .iq-visual-option {
+        padding: 12px 10px;
+    }
+
+    .iq-pricing-item {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .iq-pricing-thumbnail {
+        width: 100%;
+        height: 100px;
+    }
+
+    .iq-pricing-item-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+    }
+
+    .iq-pricing-product {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .iq-pricing-product-thumb {
+        width: 100%;
+        height: 100px;
+    }
+
+    .iq-pricing-product-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .iq-nav-buttons {
+        flex-direction: column;
     }
 }
 

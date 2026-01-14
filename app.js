@@ -6,6 +6,121 @@ document.addEventListener('DOMContentLoaded', function () {
     const debug = false;
     const MAPTILER_API_KEY = "BkQkq2NwcJAaCLNx663p";
 
+    // Multi-step wizard state
+    let currentStep = 1;
+    let selectedCategory = null;
+    let selectedService = null;
+    
+    // Pricing database parsed from HTML
+    let pricingDatabase = [];
+    let categories = [];
+    let services = {}; // keyed by category name
+
+    // Parse the pricing database from HTML
+    function parsePricingDatabase() {
+        const options = document.querySelectorAll('.iq-pricing-database .iq-option');
+        pricingDatabase = [];
+        const categorySet = new Set();
+        services = {};
+
+        options.forEach(option => {
+            const categoryName = option.querySelector('.iq-category-name')?.innerText?.trim() || '';
+            const serviceName = option.querySelector('.iq-service-name')?.innerText?.trim() || '';
+            const productName = option.querySelector('.iq-product-name')?.innerText?.trim() || '';
+            const formulaLow = option.querySelector('.iq-price-formula-low')?.innerText?.trim() || '';
+            const formulaHigh = option.querySelector('.iq-price-formula-high')?.innerText?.trim() || '';
+            const brandLogo = option.querySelector('.iq-brand-logo')?.src || '';
+            const productThumb = option.querySelector('.iq-product-thumbnail')?.src || '';
+
+            const product = {
+                category: categoryName,
+                service: serviceName,
+                product: productName,
+                formulaLow: formulaLow,
+                formulaHigh: formulaHigh,
+                brandLogo: brandLogo,
+                productThumb: productThumb
+            };
+
+            pricingDatabase.push(product);
+            categorySet.add(categoryName);
+
+            if (!services[categoryName]) {
+                services[categoryName] = new Set();
+            }
+            services[categoryName].add(serviceName);
+        });
+
+        categories = Array.from(categorySet);
+        
+        // Convert service sets to arrays
+        for (const cat in services) {
+            services[cat] = Array.from(services[cat]);
+        }
+
+        console.log('Parsed pricing database:', pricingDatabase);
+        console.log('Categories:', categories);
+        console.log('Services:', services);
+    }
+
+    // Get required variables from product formulas
+    function getRequiredVariables(category, service) {
+        const relevantProducts = pricingDatabase.filter(p => 
+            p.category === category && p.service === service
+        );
+        
+        const variables = new Set();
+        const variablePattern = /\{\{(\w+)\}\}/g;
+        
+        relevantProducts.forEach(product => {
+            let match;
+            while ((match = variablePattern.exec(product.formulaLow)) !== null) {
+                variables.add(match[1]);
+            }
+            variablePattern.lastIndex = 0;
+            while ((match = variablePattern.exec(product.formulaHigh)) !== null) {
+                variables.add(match[1]);
+            }
+            variablePattern.lastIndex = 0;
+        });
+        
+        return Array.from(variables);
+    }
+
+    // Evaluate a formula with given variables
+    function evaluateFormula(formula, variables) {
+        let expression = formula;
+        
+        // Replace all template variables with their values
+        for (const [key, value] of Object.entries(variables)) {
+            const pattern = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
+            expression = expression.replace(pattern, value);
+        }
+        
+        // Safely evaluate the mathematical expression
+        try {
+            // Only allow numbers, operators, parentheses, and whitespace
+            if (!/^[\d\s+\-*/().]+$/.test(expression)) {
+                console.error('Invalid expression:', expression);
+                return 0;
+            }
+            return Function('"use strict"; return (' + expression + ')')();
+        } catch (e) {
+            console.error('Error evaluating formula:', formula, e);
+            return 0;
+        }
+    }
+
+    // Category icons
+    const categoryIcons = {
+        'Roofing': '🏠',
+        'Siding': '🧱',
+        'Gutters': '🌧️'
+    };
+
+    // Initialize pricing database
+    parsePricingDatabase();
+
     const map = new maplibregl.Map({
         container: 'iq-map',
         style: 'https://api.maptiler.com/maps/streets-v2/style.json?key=' + MAPTILER_API_KEY,
@@ -401,10 +516,283 @@ document.addEventListener('DOMContentLoaded', function () {
     var buildingUUID = 0;
     var selectedBuildings = [];
 
-    const getQuoteButton = document.getElementById('iq-get-quote');
-    getQuoteButton.addEventListener('click', function () {
-        getQuote();
+    // Render step 1: Categories
+    function renderCategories() {
+        const container = document.getElementById('iq-category-list');
+        container.innerHTML = '';
+        
+        categories.forEach(category => {
+            const card = document.createElement('div');
+            card.className = 'iq-option-card';
+            card.innerHTML = `
+                <span class="iq-option-card-icon">${categoryIcons[category] || '📋'}</span>
+                <span>${category}</span>
+            `;
+            card.addEventListener('click', () => {
+                selectedCategory = category;
+                goToStep(2);
+            });
+            container.appendChild(card);
+        });
+    }
+
+    // Render step 2: Services
+    function renderServices() {
+        const container = document.getElementById('iq-service-list');
+        container.innerHTML = '';
+        
+        const availableServices = services[selectedCategory] || [];
+        
+        availableServices.forEach(service => {
+            const card = document.createElement('div');
+            card.className = 'iq-option-card';
+            card.textContent = service;
+            card.addEventListener('click', () => {
+                selectedService = service;
+                goToStep(3);
+            });
+            container.appendChild(card);
+        });
+    }
+
+    // Navigation button event listeners
+    const backStep2Button = document.getElementById('iq-back-step2');
+    const backStep3Button = document.getElementById('iq-back-step3');
+    const nextStep3Button = document.getElementById('iq-next-step3');
+    const backStep4Button = document.getElementById('iq-back-step4');
+    const nextStep4Button = document.getElementById('iq-next-step4');
+    const backStep5Button = document.getElementById('iq-back-step5');
+    const startOverButton = document.getElementById('iq-start-over');
+
+    backStep2Button.addEventListener('click', function () {
+        goToStep(1);
     });
+
+    backStep3Button.addEventListener('click', function () {
+        goToStep(2);
+    });
+
+    nextStep3Button.addEventListener('click', function () {
+        goToStep(4);
+    });
+
+    backStep4Button.addEventListener('click', function () {
+        goToStep(3);
+    });
+
+    nextStep4Button.addEventListener('click', function () {
+        goToStep(5);
+    });
+
+    backStep5Button.addEventListener('click', function () {
+        goToStep(4);
+    });
+
+    startOverButton.addEventListener('click', function () {
+        // Clear everything and start over
+        const clearButton = document.querySelector('.maplibregl-ctrl-geocoder .clear-button-container button');
+        if (clearButton) {
+            clearButton.click();
+        }
+        selectedCategory = null;
+        selectedService = null;
+        goToStep(1);
+    });
+
+    function goToStep(step) {
+        currentStep = step;
+
+        // Update step indicator
+        const steps = document.querySelectorAll('.iq-step');
+        steps.forEach((stepEl, index) => {
+            stepEl.classList.remove('iq-step-active', 'iq-step-completed');
+            if (index + 1 < step) {
+                stepEl.classList.add('iq-step-completed');
+            } else if (index + 1 === step) {
+                stepEl.classList.add('iq-step-active');
+            }
+        });
+
+        // Update views
+        const views = document.querySelectorAll('.iq-view');
+        views.forEach((view, index) => {
+            view.classList.remove('iq-view-active');
+            if (index + 1 === step) {
+                view.classList.add('iq-view-active');
+            }
+        });
+
+        // Step-specific logic
+        if (step === 1) {
+            renderCategories();
+        } else if (step === 2) {
+            renderServices();
+        } else if (step === 3) {
+            // Resize map when going to step 3
+            setTimeout(() => {
+                map.resize();
+            }, 100);
+        } else if (step === 4) {
+            updateStructureListUI();
+            updateStep4Button();
+        } else if (step === 5) {
+            renderPricing();
+        }
+    }
+
+    function updateStep3Button() {
+        nextStep3Button.disabled = selectedBuildings.length === 0;
+        
+        // Update selected summary
+        const summary = document.getElementById('iq-selected-summary');
+        if (selectedBuildings.length === 0) {
+            summary.textContent = '';
+        } else if (selectedBuildings.length === 1) {
+            summary.textContent = '1 structure selected';
+        } else {
+            summary.textContent = selectedBuildings.length + ' structures selected';
+        }
+    }
+
+    function updateStep4Button() {
+        const requiredVars = getRequiredVariables(selectedCategory, selectedService);
+        let allAnswered = true;
+        
+        for (let i = 0; i < selectedBuildings.length; i++) {
+            const building = selectedBuildings[i];
+            
+            if (requiredVars.includes('roofArea') && !building.roofPitch) {
+                allAnswered = false;
+                break;
+            }
+            if (requiredVars.includes('wallArea') && !building.stories) {
+                allAnswered = false;
+                break;
+            }
+            if (requiredVars.includes('gutterLength') && !building.gutterPercent) {
+                allAnswered = false;
+                break;
+            }
+        }
+        
+        nextStep4Button.disabled = !allAnswered;
+    }
+
+    function renderPricing() {
+        cleanupMiniMaps();
+        const breakdownContainer = document.getElementById('iq-pricing-breakdown');
+        
+        // Update subtitle
+        const subtitle = document.getElementById('iq-step5-subtitle');
+        subtitle.textContent = `Here's your instant ${selectedService.toLowerCase()} estimate`;
+        
+        breakdownContainer.innerHTML = '';
+        
+        // Get relevant products for this service
+        const relevantProducts = pricingDatabase.filter(p => 
+            p.category === selectedCategory && p.service === selectedService
+        );
+
+        for (let i = 0; i < selectedBuildings.length; i++) {
+            const building = selectedBuildings[i];
+            
+            // Calculate variables for this building
+            const buildingArea = building.area; // square feet
+            const perimeterMeters = turf.length(turf.lineString(building.polygon), { units: 'meters' });
+            const perimeterFeet = perimeterMeters * 3.28084;
+            
+            // Calculate roofArea based on pitch
+            let roofArea = buildingArea;
+            let pitchLabel = '';
+            if (building.roofPitch === 'shallow') {
+                roofArea = buildingArea * 1.1;
+                pitchLabel = 'Shallow pitch';
+            } else if (building.roofPitch === 'medium') {
+                roofArea = buildingArea * 1.2;
+                pitchLabel = 'Medium pitch';
+            } else if (building.roofPitch === 'steep') {
+                roofArea = buildingArea * 1.3;
+                pitchLabel = 'Steep pitch';
+            }
+            
+            // Calculate wallArea based on stories
+            let wallArea = 0;
+            let storiesLabel = '';
+            if (building.stories) {
+                const height = building.stories * 10; // 10 ft per story
+                wallArea = perimeterFeet * height;
+                storiesLabel = building.stories + (building.stories === 1 ? ' story' : ' stories');
+            }
+            
+            // Calculate gutterLength based on percentage
+            let gutterLength = 0;
+            let gutterLabel = '';
+            if (building.gutterPercent) {
+                gutterLength = perimeterFeet * (building.gutterPercent / 100);
+                gutterLabel = building.gutterPercent + '% coverage';
+            }
+            
+            const variables = {
+                roofArea: roofArea,
+                wallArea: wallArea,
+                gutterLength: gutterLength
+            };
+            
+            // Build detail string
+            const areaSqft = Math.round(buildingArea).toLocaleString();
+            let detailParts = [areaSqft + ' ft²'];
+            if (pitchLabel) detailParts.push(pitchLabel);
+            if (storiesLabel) detailParts.push(storiesLabel);
+            if (gutterLabel) detailParts.push(gutterLabel);
+            const detailString = detailParts.join(' · ');
+            
+            const thumbnailId = 'pricing-structure-thumbnail-' + i;
+            
+            // Create structure section
+            const structureDiv = document.createElement('div');
+            structureDiv.className = 'iq-pricing-structure';
+            
+            let productsHTML = '';
+            relevantProducts.forEach(product => {
+                const priceLow = evaluateFormula(product.formulaLow, variables);
+                const priceHigh = evaluateFormula(product.formulaHigh, variables);
+                
+                const priceLowFormatted = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(priceLow);
+                const priceHighFormatted = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(priceHigh);
+                
+                productsHTML += `
+                    <div class="iq-pricing-product">
+                        <img class="iq-pricing-product-thumb" src="${product.productThumb}" alt="${product.product}">
+                        <div class="iq-pricing-product-content">
+                            <div class="iq-pricing-product-header">
+                                <span class="iq-pricing-product-name">${product.product}</span>
+                                <span class="iq-pricing-product-price">${priceLowFormatted} - ${priceHighFormatted}</span>
+                            </div>
+                            <img class="iq-pricing-product-brand" src="${product.brandLogo}" alt="">
+                        </div>
+                    </div>
+                `;
+            });
+            
+            structureDiv.innerHTML = `
+                <div class="iq-pricing-structure-header">
+                    <div class="iq-pricing-structure-thumbnail" id="${thumbnailId}"></div>
+                    <div class="iq-pricing-structure-info">
+                        <span class="iq-pricing-structure-name">${logicalIndex(i)} Structure</span>
+                        <span class="iq-pricing-structure-details">${detailString}</span>
+                    </div>
+                </div>
+                <div class="iq-pricing-products">
+                    ${productsHTML}
+                </div>
+            `;
+            
+            breakdownContainer.appendChild(structureDiv);
+            
+            // Create thumbnail map
+            createStructureThumbnail(thumbnailId, building.polygon, building.center);
+        }
+    }
 
 
     // Remove extraneous suggestions from the geocoder and clean up the address
@@ -432,32 +820,78 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
 
-    function getQuote() {
-        var roofArea = 0;
-        for (let i = 0; i < selectedBuildings.length; i++) {
-            const buildingArea = selectedBuildings[i].area;
-            if (selectedBuildings[i].roofPitch === 'shallow') {
-                roofArea += buildingArea * 1.1;
-            }
-            if (selectedBuildings[i].roofPitch === 'medium') {
-                roofArea += buildingArea * 1.2;
-            }
-            if (selectedBuildings[i].roofPitch === 'steep') {
-                roofArea += buildingArea * 1.3;
-            }
-        }
+    // Store mini map instances for cleanup
+    let miniMaps = [];
 
-        var roofPriceLow = (roofArea * 4.87).toFixed(2);
-        var roofPriceLowFormatted = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(roofPriceLow);
-        var roofPriceHigh = (roofArea * 5.24).toFixed(2);
-        var roofPriceHighFormatted = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(roofPriceHigh);
-        alert('The estimated price for the roof is ' + roofPriceLowFormatted + '-' + roofPriceHighFormatted + '.');
-        
-        };
+    function cleanupMiniMaps() {
+        miniMaps.forEach(m => m.remove());
+        miniMaps = [];
+    }
+
+    function createStructureThumbnail(containerId, polygon, center) {
+        const miniMap = new maplibregl.Map({
+            container: containerId,
+            style: 'https://api.maptiler.com/maps/satellite/style.json?key=' + MAPTILER_API_KEY,
+            center: center.geometry.coordinates,
+            zoom: 18,
+            interactive: false,
+            attributionControl: false
+        });
+
+        miniMap.on('load', function() {
+            miniMap.addSource('structure-polygon', {
+                type: 'geojson',
+                data: {
+                    type: 'Feature',
+                    geometry: {
+                        type: 'Polygon',
+                        coordinates: [polygon]
+                    }
+                }
+            });
+
+            miniMap.addLayer({
+                id: 'structure-fill',
+                type: 'fill',
+                source: 'structure-polygon',
+                paint: {
+                    'fill-color': '#0a84ff',
+                    'fill-opacity': 0.4
+                }
+            });
+
+            miniMap.addLayer({
+                id: 'structure-outline',
+                type: 'line',
+                source: 'structure-polygon',
+                paint: {
+                    'line-color': '#0a84ff',
+                    'line-width': 2
+                }
+            });
+
+            // Fit to bounds of the polygon with padding
+            const bounds = new maplibregl.LngLatBounds();
+            polygon.forEach(coord => bounds.extend(coord));
+            miniMap.fitBounds(bounds, { padding: 20, duration: 0 });
+        });
+
+        miniMaps.push(miniMap);
+        return miniMap;
+    }
 
     function updateStructureListUI() {
+        cleanupMiniMaps();
         const structureList = document.getElementById('iq-structure-list');
         structureList.innerHTML = '';
+        
+        // Get required variables for this service
+        const requiredVars = getRequiredVariables(selectedCategory, selectedService);
+        
+        // Update subtitle based on required vars
+        const subtitle = document.getElementById('iq-step4-subtitle');
+        subtitle.textContent = 'Answer a few questions about each structure';
+        
         for (let i = 0; i < selectedBuildings.length; i++) {
             const structure = selectedBuildings[i];
             const area = structure.area;
@@ -466,89 +900,135 @@ document.addEventListener('DOMContentLoaded', function () {
             const structureItem = document.createElement('div');
             structureItem.classList.add('iq-structure-item');
             structureItem.setAttribute('data-structure-index', i);
+            const thumbnailId = 'structure-thumbnail-' + i;
+            
+            // Build questions HTML based on required variables
+            let questionsHTML = '';
+            
+            if (requiredVars.includes('roofArea')) {
+                questionsHTML += `
+                    <div class="iq-question-group">
+                        <span class="iq-visual-option-group-title">Roof pitch</span>
+                        <div class="iq-visual-option-group" data-field="roofPitch" data-structure="${i}">
+                            <div class="iq-visual-option${structure.roofPitch === 'shallow' ? ' iq-active' : ''}" data-value="shallow">
+                                <svg width="100" height="100" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+                                <polygon points="0,120 100,60 200,120, 200,200, 0,200" fill="currentColor"/>
+                                </svg>
+                                <span class="iq-visual-option-title">Shallow</span>
+                            </div>
+                            <div class="iq-visual-option${structure.roofPitch === 'medium' ? ' iq-active' : ''}" data-value="medium">
+                                <svg width="100" height="100" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+                                    <polygon points="0,120 100,30 200,120, 200,200, 0,200" fill="currentColor"/>
+                                </svg>
+                                <span class="iq-visual-option-title">Medium</span>
+                            </div>
+                            <div class="iq-visual-option${structure.roofPitch === 'steep' ? ' iq-active' : ''}" data-value="steep">
+                                <svg width="100" height="100" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+                                    <polygon points="0,120 100,0 200,120, 200,200, 0,200" fill="currentColor"/>
+                                </svg>
+                                <span class="iq-visual-option-title">Steep</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            if (requiredVars.includes('wallArea')) {
+                questionsHTML += `
+                    <div class="iq-question-group">
+                        <span class="iq-visual-option-group-title">Building height</span>
+                        <div class="iq-visual-option-group" data-field="stories" data-structure="${i}">
+                            <div class="iq-visual-option${structure.stories === 1 ? ' iq-active' : ''}" data-value="1">
+                                <span class="iq-visual-option-title">1 Story</span>
+                            </div>
+                            <div class="iq-visual-option${structure.stories === 1.5 ? ' iq-active' : ''}" data-value="1.5">
+                                <span class="iq-visual-option-title">1.5 Story</span>
+                            </div>
+                            <div class="iq-visual-option${structure.stories === 2 ? ' iq-active' : ''}" data-value="2">
+                                <span class="iq-visual-option-title">2 Story</span>
+                            </div>
+                            <div class="iq-visual-option${structure.stories === 2.5 ? ' iq-active' : ''}" data-value="2.5">
+                                <span class="iq-visual-option-title">2.5 Story</span>
+                            </div>
+                            <div class="iq-visual-option${structure.stories === 3 ? ' iq-active' : ''}" data-value="3">
+                                <span class="iq-visual-option-title">3 Story</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            if (requiredVars.includes('gutterLength')) {
+                questionsHTML += `
+                    <div class="iq-question-group">
+                        <span class="iq-visual-option-group-title">Gutter coverage</span>
+                        <div class="iq-visual-option-group" data-field="gutterPercent" data-structure="${i}">
+                            <div class="iq-visual-option${structure.gutterPercent === 25 ? ' iq-active' : ''}" data-value="25">
+                                <span class="iq-visual-option-title">25%</span>
+                            </div>
+                            <div class="iq-visual-option${structure.gutterPercent === 50 ? ' iq-active' : ''}" data-value="50">
+                                <span class="iq-visual-option-title">50%</span>
+                            </div>
+                            <div class="iq-visual-option${structure.gutterPercent === 75 ? ' iq-active' : ''}" data-value="75">
+                                <span class="iq-visual-option-title">75%</span>
+                            </div>
+                            <div class="iq-visual-option${structure.gutterPercent === 100 ? ' iq-active' : ''}" data-value="100">
+                                <span class="iq-visual-option-title">100%</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
             structureItem.innerHTML = `
-
-                <h3 class="iq-structure-item-title">${logicalIndex(i)} Structure</h3>
-
-                <span class="iq-structure-item-area">${areaSqft} ft²</span>
-
-                <span class="iq-visual-option-group-title">Roof pitch</span>
-
-                <div class="iq-visual-option-group iq-roof-pitch-options" data-field="roofPitch">
-
-                    <div class="iq-visual-option" data-value="shallow">
-                        <svg width="100" height="100" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
-                        <polygon points="0,120 100,60 200,120, 200,200, 0,200" fill="currentColor"/>
-                        </svg>
-                        <span class="iq-visual-option-title">Shallow</span>
-                    </div>
-                    
-                    <div class="iq-visual-option" data-value="medium">
-                        <svg width="100" height="100" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
-                            <polygon points="0,120 100,30 200,120, 200,200, 0,200" fill="currentColor"/>
-                        </svg>
-                        <span class="iq-visual-option-title">Medium</span>
-                    </div>
-                    
-                    <div class="iq-visual-option" data-value="steep">
-                        <svg width="100" height="100" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
-                            <polygon points="0,120 100,0 200,120, 200,200, 0,200" fill="currentColor"/>
-                        </svg>
-                        <span class="iq-visual-option-title">Steep</span>
-                    </div>
-                
+                <div class="iq-structure-thumbnail" id="${thumbnailId}"></div>
+                <div class="iq-structure-item-info">
+                    <h3 class="iq-structure-item-title">${logicalIndex(i)} Structure</h3>
+                    <span class="iq-structure-item-area">${areaSqft} ft²</span>
+                </div>
+                <div class="iq-structure-questions">
+                    ${questionsHTML}
                 </div>
             `;
             structureList.appendChild(structureItem);
 
-            const pitchOptionsGroup = structureItem.querySelector('.iq-visual-option-group.iq-roof-pitch-options');
+            // Create thumbnail map after element is in DOM
+            createStructureThumbnail(thumbnailId, structure.polygon, structure.center);
 
-            const pitchOptions = pitchOptionsGroup.querySelectorAll('.iq-visual-option');
-
-            // If the roof pitch is already set, highlight the corresponding option
-            if (structure.roofPitch) {
-                pitchOptions.forEach(option => {
-                    if (option.getAttribute('data-value') === structure.roofPitch) {
+            // Add event listeners for all option groups in this structure item
+            const optionGroups = structureItem.querySelectorAll('.iq-visual-option-group');
+            optionGroups.forEach(group => {
+                const field = group.getAttribute('data-field');
+                const structureIndex = parseInt(group.getAttribute('data-structure'));
+                const options = group.querySelectorAll('.iq-visual-option');
+                
+                options.forEach(option => {
+                    option.addEventListener('click', function() {
+                        // Remove active from all options in this group
+                        options.forEach(opt => opt.classList.remove('iq-active'));
+                        // Add active to clicked option
                         option.classList.add('iq-active');
-                    }
-                });
-            }
-
-            pitchOptions.forEach(option => {
-                option.addEventListener('click', function () {
-                    pitchOptions.forEach(option => {
-                        option.classList.remove('iq-active');
+                        
+                        // Get value and update building
+                        let value = option.getAttribute('data-value');
+                        
+                        // Convert numeric values
+                        if (field === 'stories' || field === 'gutterPercent') {
+                            value = parseFloat(value);
+                        }
+                        
+                        selectedBuildings[structureIndex][field] = value;
+                        console.log('Updated building', structureIndex, field, value);
+                        updateStep4Button();
                     });
-                    option.classList.add('iq-active');
-                    const selectedPitch = option.getAttribute('data-value');
-                    selectedBuildings[i].roofPitch = selectedPitch;
-                    console.log(selectedBuildings);
-                    updateGetQuoteButton();
                 });
             });
         }
     }
 
     function updateGetQuoteButton() {
-        // Only enable the button if there is at least one structure selected and all structures have a roof pitch selected
-        const getQuoteButton = document.getElementById('iq-get-quote');
-
-        if (selectedBuildings.length > 0) {
-            let allRoofPitchesSelected = true;
-            for (let i = 0; i < selectedBuildings.length; i++) {
-                if (!selectedBuildings[i].roofPitch) {
-                    allRoofPitchesSelected = false;
-                    break;
-                }
-            }
-            if (allRoofPitchesSelected) {
-                getQuoteButton.disabled = false;
-            } else {
-                getQuoteButton.disabled = true;
-            }
-        } else {
-            getQuoteButton.disabled = true;
-        }
+        // Update step 3 button (which is now the "Continue" button)
+        updateStep3Button();
     }
 
     function logicalIndex(integer){
@@ -911,5 +1391,8 @@ document.addEventListener('DOMContentLoaded', function () {
         
         return merged;
     }
+
+    // Initialize step 1
+    renderCategories();
 
 });
