@@ -125,60 +125,62 @@
             </div>
         </div>
 
-        <!-- Step 1: Choose Category -->
-        <div id="iq-view-1" class="iq-view iq-view-active">
-            <h2 class="iq-view-title">What type of work do you need?</h2>
-            <p class="iq-view-subtitle">Select a category to get started</p>
-            <div id="iq-category-list" class="iq-option-list"></div>
-        </div>
-
-        <!-- Step 2: Choose Service -->
-        <div id="iq-view-2" class="iq-view">
-            <h2 class="iq-view-title">What service do you need?</h2>
-            <p class="iq-view-subtitle">Select a service</p>
-            <div id="iq-service-list" class="iq-option-list"></div>
-            <div class="iq-nav-buttons">
-                <button id="iq-back-step2" class="iq-button iq-button-secondary">Back</button>
+        <div id="iq-views-container">
+            <!-- Step 1: Choose Category -->
+            <div id="iq-view-1" class="iq-view iq-view-active">
+                <h2 class="iq-view-title">What type of work do you need?</h2>
+                <p class="iq-view-subtitle">Select a category to get started</p>
+                <div id="iq-category-list" class="iq-option-list"></div>
             </div>
-        </div>
 
-        <!-- Step 3: Find Property -->
-        <div id="iq-view-3" class="iq-view">
-            <div id="iq-top-container"></div>
-            <div id="iq-middle-container">
-                <div id="iq-map-wrapper">
-                    <div id="iq-map"></div>
-                </div>
-            </div>
-            <div id="iq-step3-bottom">
-                <p id="iq-step3-hint">Search for your address, then click on each structure you'd like included in your quote.</p>
-                <div id="iq-selected-summary"></div>
+            <!-- Step 2: Choose Service -->
+            <div id="iq-view-2" class="iq-view">
+                <h2 class="iq-view-title">What service do you need?</h2>
+                <p class="iq-view-subtitle">Select a service</p>
+                <div id="iq-service-list" class="iq-option-list"></div>
                 <div class="iq-nav-buttons">
-                    <button id="iq-back-step3" class="iq-button iq-button-secondary">Back</button>
-                    <button id="iq-next-step3" class="iq-button" disabled>Continue</button>
+                    <button id="iq-back-step2" class="iq-button iq-button-secondary">Back</button>
                 </div>
             </div>
-        </div>
 
-        <!-- Step 4: Confirm Selection -->
-        <div id="iq-view-4" class="iq-view">
-            <h2 class="iq-view-title">Confirm Details</h2>
-            <p class="iq-view-subtitle" id="iq-step4-subtitle">Answer a few questions about each structure</p>
-            <ul id="iq-structure-list"></ul>
-            <div class="iq-nav-buttons">
-                <button id="iq-back-step4" class="iq-button iq-button-secondary">Back</button>
-                <button id="iq-next-step4" class="iq-button" disabled>See Pricing</button>
+            <!-- Step 3: Find Property -->
+            <div id="iq-view-3" class="iq-view">
+                <div id="iq-top-container"></div>
+                <div id="iq-middle-container">
+                    <div id="iq-map-wrapper">
+                        <div id="iq-map"></div>
+                    </div>
+                </div>
+                <div id="iq-step3-bottom">
+                    <p id="iq-step3-hint">Search for your address, then click on each structure you'd like included in your quote.</p>
+                    <div id="iq-selected-summary"></div>
+                    <div class="iq-nav-buttons">
+                        <button id="iq-back-step3" class="iq-button iq-button-secondary">Back</button>
+                        <button id="iq-next-step3" class="iq-button" disabled>Continue</button>
+                    </div>
+                </div>
             </div>
-        </div>
 
-        <!-- Step 5: See Pricing -->
-        <div id="iq-view-5" class="iq-view">
-            <h2 class="iq-view-title">Your Estimate</h2>
-            <p class="iq-view-subtitle" id="iq-step5-subtitle">Here's your instant estimate</p>
-            <div id="iq-pricing-breakdown"></div>
-            <div class="iq-nav-buttons">
-                <button id="iq-back-step5" class="iq-button iq-button-secondary">Back</button>
-                <button id="iq-start-over" class="iq-button">Start Over</button>
+            <!-- Step 4: Confirm Selection -->
+            <div id="iq-view-4" class="iq-view">
+                <h2 class="iq-view-title">Confirm Details</h2>
+                <p class="iq-view-subtitle" id="iq-step4-subtitle">Answer a few questions about each structure</p>
+                <ul id="iq-structure-list"></ul>
+                <div class="iq-nav-buttons">
+                    <button id="iq-back-step4" class="iq-button iq-button-secondary">Back</button>
+                    <button id="iq-next-step4" class="iq-button" disabled>See Pricing</button>
+                </div>
+            </div>
+
+            <!-- Step 5: See Pricing -->
+            <div id="iq-view-5" class="iq-view">
+                <h2 class="iq-view-title">Your Estimate</h2>
+                <p class="iq-view-subtitle" id="iq-step5-subtitle">Here's your instant estimate</p>
+                <div id="iq-pricing-breakdown"></div>
+                <div class="iq-nav-buttons">
+                    <button id="iq-back-step5" class="iq-button iq-button-secondary">Back</button>
+                    <button id="iq-start-over" class="iq-button">Start Over</button>
+                </div>
             </div>
         </div>
 

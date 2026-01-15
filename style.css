@@ -130,15 +130,63 @@ body h1 {
     font-size: 1.5em;
 }
 
+/* Views Container */
+#iq-views-container {
+    position: relative;
+}
+
 /* Views */
 .iq-view {
     display: none;
     flex-direction: column;
     gap: 16px;
+    opacity: 0;
+    transform: translateX(30px);
+}
+
+.iq-view.iq-view-entering {
+    display: flex;
+    opacity: 0;
+    transform: translateX(30px);
+    transition: none;
+}
+
+.iq-view.iq-view-entering-back {
+    display: flex;
+    opacity: 0;
+    transform: translateX(-30px);
+    transition: none;
 }
 
 .iq-view.iq-view-active {
     display: flex;
+    opacity: 1;
+    transform: translateX(0);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.iq-view.iq-view-exiting {
+    display: flex;
+    opacity: 0;
+    transform: translateX(-30px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    pointer-events: none;
+}
+
+.iq-view.iq-view-exiting-back {
+    display: flex;
+    opacity: 0;
+    transform: translateX(30px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    pointer-events: none;
 }
 
 .iq-view-title {
@@ -187,7 +235,22 @@ body h1 {
 .iq-question-group {
     display: flex;
     flex-direction: column;
-    align-items: flex-end;
+    align-items: flex-start;
+    background-color: #f8f9fa;
+    border: 1px solid #e4e8ed;
+    border-radius: 12px;
+    padding: 12px 16px;
+    gap: 8px;
+}
+
+.iq-question-group .iq-visual-option-group-title {
+    margin-bottom: 0;
+    font-weight: 600;
+    color: #0e1012;
+}
+
+.iq-question-group .iq-visual-option-group {
+    justify-content: flex-start;
 }
 
 /* Navigation Buttons */
@@ -392,15 +455,20 @@ body h1 {
     align-items: center;
     text-align: center;
     background-color: white;
-    border: 1px solid #cfd8e2;
+    border: 0.5px solid #cfd8e2;
     border-radius: 8px;
     padding: 12px 16px;
     cursor: pointer;
-    transition: border-color 0.2s ease, background-color 0.2s ease;
+    transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease;
+    box-sizing: border-box;
 }
 
 .iq-visual-option:hover {
     background-color: #f8f9fa;
+}
+
+.iq-visual-option:active {
+    transform: scale(0.925);
 }
 
 .iq-visual-option svg {
@@ -410,8 +478,9 @@ body h1 {
 }
 
 .iq-visual-option.iq-active {
-    border: 2px solid #007aff;
+    border-color: #007aff;
     background-color: #f0f7ff;
+    box-shadow: 0 0 0 1.5px #007aff;
 }
 
 .iq-visual-option.iq-active svg {

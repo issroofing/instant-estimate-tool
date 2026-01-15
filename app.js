@@ -155,9 +155,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
         map.addSource('satellite-source', {
             type: 'raster',
-            tiles: ['https://api.maptiler.com/maps/satellite/{z}/{x}/{y}@2x.jpg?key=' + MAPTILER_API_KEY],
-            tileSize: 512,
-            attribution: '© MapTiler'
+            tiles: ['https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}'],
+            tileSize: 256,
+            attribution: '© Google'
         });
 
         map.addLayer({
@@ -600,6 +600,8 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     function goToStep(step) {
+        const previousStep = currentStep;
+        const isGoingBack = step < previousStep;
         currentStep = step;
 
         // Update step indicator
@@ -613,30 +615,77 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
 
-        // Update views
+        // Update views with animation
         const views = document.querySelectorAll('.iq-view');
-        views.forEach((view, index) => {
-            view.classList.remove('iq-view-active');
-            if (index + 1 === step) {
-                view.classList.add('iq-view-active');
-            }
-        });
+        const currentView = document.querySelector('.iq-view.iq-view-active');
+        const nextView = views[step - 1];
+        const viewsContainer = document.getElementById('iq-views-container');
 
-        // Step-specific logic
+        // Run step-specific logic FIRST to populate content before measuring height
         if (step === 1) {
             renderCategories();
         } else if (step === 2) {
             renderServices();
-        } else if (step === 3) {
-            // Resize map when going to step 3
-            setTimeout(() => {
-                map.resize();
-            }, 100);
         } else if (step === 4) {
             updateStructureListUI();
             updateStep4Button();
         } else if (step === 5) {
             renderPricing();
+        }
+
+        if (currentView && currentView !== nextView) {
+            // Capture current height
+            const startHeight = viewsContainer.offsetHeight;
+            
+            // Add exiting class to current view
+            currentView.classList.remove('iq-view-active');
+            currentView.classList.add(isGoingBack ? 'iq-view-exiting-back' : 'iq-view-exiting');
+            
+            // Prepare next view for entrance - start in entering state
+            nextView.classList.add(isGoingBack ? 'iq-view-entering-back' : 'iq-view-entering');
+            
+            // Force reflow to ensure the entering state is applied
+            nextView.offsetHeight;
+            
+            // Measure the target height (content is now populated)
+            const endHeight = nextView.offsetHeight;
+            
+            // Set explicit start height and enable transition
+            viewsContainer.style.height = startHeight + 'px';
+            viewsContainer.style.transition = 'height 0.3s ease';
+            viewsContainer.offsetHeight; // Force reflow
+            
+            // Animate to end height
+            viewsContainer.style.height = endHeight + 'px';
+            
+            // Remove entering class and add active to trigger animation
+            nextView.classList.remove('iq-view-entering', 'iq-view-entering-back');
+            nextView.classList.add('iq-view-active');
+            
+            // Clean up after animation
+            setTimeout(() => {
+                currentView.classList.remove('iq-view-exiting', 'iq-view-exiting-back');
+                viewsContainer.style.height = '';
+                viewsContainer.style.transition = '';
+                
+                // Resize mini maps and re-fit bounds after animation completes
+                miniMaps.forEach(m => {
+                    m.resize();
+                    if (m._structureBounds) {
+                        m.fitBounds(m._structureBounds, { padding: 10, duration: 0 });
+                    }
+                });
+            }, 300);
+        } else if (!currentView) {
+            // First load, just show the view
+            nextView.classList.add('iq-view-active');
+        }
+
+        // Map resize needs to happen after view is visible
+        if (step === 3) {
+            setTimeout(() => {
+                map.resize();
+            }, 100);
         }
     }
 
@@ -829,14 +878,37 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function createStructureThumbnail(containerId, polygon, center) {
+        const bounds = new maplibregl.LngLatBounds();
+        polygon.forEach(coord => bounds.extend(coord));
+        
         const miniMap = new maplibregl.Map({
             container: containerId,
-            style: 'https://api.maptiler.com/maps/satellite/style.json?key=' + MAPTILER_API_KEY,
+            style: {
+                version: 8,
+                sources: {
+                    'google-satellite': {
+                        type: 'raster',
+                        tiles: ['https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}'],
+                        tileSize: 256,
+                        attribution: '© Google'
+                    }
+                },
+                layers: [{
+                    id: 'satellite-layer',
+                    type: 'raster',
+                    source: 'google-satellite',
+                    minzoom: 0,
+                    maxzoom: 22
+                }]
+            },
             center: center.geometry.coordinates,
             zoom: 18,
             interactive: false,
             attributionControl: false
         });
+        
+        // Store bounds on the map instance for re-fitting after resize
+        miniMap._structureBounds = bounds;
 
         miniMap.on('load', function() {
             miniMap.addSource('structure-polygon', {
@@ -856,7 +928,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 source: 'structure-polygon',
                 paint: {
                     'fill-color': '#0a84ff',
-                    'fill-opacity': 0.4
+                    'fill-opacity': 0.1
                 }
             });
 
@@ -866,14 +938,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 source: 'structure-polygon',
                 paint: {
                     'line-color': '#0a84ff',
-                    'line-width': 2
+                    'line-width': 1
                 }
             });
 
             // Fit to bounds of the polygon with padding
-            const bounds = new maplibregl.LngLatBounds();
-            polygon.forEach(coord => bounds.extend(coord));
-            miniMap.fitBounds(bounds, { padding: 20, duration: 0 });
+            miniMap.fitBounds(bounds, { padding: 10, duration: 0 });
         });
 
         miniMaps.push(miniMap);
@@ -911,20 +981,20 @@ document.addEventListener('DOMContentLoaded', function () {
                         <span class="iq-visual-option-group-title">Roof pitch</span>
                         <div class="iq-visual-option-group" data-field="roofPitch" data-structure="${i}">
                             <div class="iq-visual-option${structure.roofPitch === 'shallow' ? ' iq-active' : ''}" data-value="shallow">
-                                <svg width="100" height="100" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
-                                <polygon points="0,120 100,60 200,120, 200,200, 0,200" fill="currentColor"/>
+                                <svg viewBox="-2 -20 28 22" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M 1 0 L 1 -12 L 0 -12 L 0 -13 L 12 -18 L 24 -13 L 24 -12 L 23 -12 L 23 0 L 14 0 L 14 -6 L 10 -6 L 10 0 Z" fill="currentColor"/>
                                 </svg>
                                 <span class="iq-visual-option-title">Shallow</span>
                             </div>
                             <div class="iq-visual-option${structure.roofPitch === 'medium' ? ' iq-active' : ''}" data-value="medium">
-                                <svg width="100" height="100" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
-                                    <polygon points="0,120 100,30 200,120, 200,200, 0,200" fill="currentColor"/>
+                                <svg viewBox="-2 -25 28 27" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M 1 0 L 1 -12 L 0 -12 L 0 -13 L 12 -23 L 24 -13 L 24 -12 L 23 -12 L 23 0 L 14 0 L 14 -6 L 10 -6 L 10 0 Z" fill="currentColor"/>
                                 </svg>
-                                <span class="iq-visual-option-title">Medium</span>
+                                <span class="iq-visual-option-title">Normal</span>
                             </div>
                             <div class="iq-visual-option${structure.roofPitch === 'steep' ? ' iq-active' : ''}" data-value="steep">
-                                <svg width="100" height="100" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
-                                    <polygon points="0,120 100,0 200,120, 200,200, 0,200" fill="currentColor"/>
+                                <svg viewBox="-2 -30 28 32" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M 1 0 L 1 -12 L 0 -12 L 0 -13 L 12 -28 L 24 -13 L 24 -12 L 23 -12 L 23 0 L 14 0 L 14 -6 L 10 -6 L 10 0 Z" fill="currentColor"/>
                                 </svg>
                                 <span class="iq-visual-option-title">Steep</span>
                             </div>
@@ -939,18 +1009,33 @@ document.addEventListener('DOMContentLoaded', function () {
                         <span class="iq-visual-option-group-title">Building height</span>
                         <div class="iq-visual-option-group" data-field="stories" data-structure="${i}">
                             <div class="iq-visual-option${structure.stories === 1 ? ' iq-active' : ''}" data-value="1">
+                                <svg viewBox="-2 -21 28 23" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M 1 0 L 1 -10 L 0 -10 L 0 -11 L 12 -19 L 24 -11 L 24 -10 L 23 -10 L 23 0 L 14 0 L 14 -6 L 10 -6 L 10 0 Z" fill="currentColor"/>
+                                </svg>
                                 <span class="iq-visual-option-title">1 Story</span>
                             </div>
                             <div class="iq-visual-option${structure.stories === 1.5 ? ' iq-active' : ''}" data-value="1.5">
+                                <svg viewBox="-2 -32 31 34" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M 1 0 L 1 -15 L 0 -15 L 0 -16 L 14 -30 L 27 -16 L 27 -15 L 26 -15 L 26 0 L 16 0 L 16 -6 L 12 -6 L 12 0 Z" fill="currentColor"/>
+                                </svg>
                                 <span class="iq-visual-option-title">1.5 Story</span>
                             </div>
                             <div class="iq-visual-option${structure.stories === 2 ? ' iq-active' : ''}" data-value="2">
+                                <svg viewBox="-2 -34 50 36" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M 1 0 L 1 -12 L 0 -12 L 0 -13 L 12 -20 L 21 -20 L 21 -23 L 20 -23 L 20 -24 L 33 -32 L 46 -24 L 46 -23 L 45 -23 L 45 0 L 36 0 L 36 -6 L 32 -6 L 32 0 L 20 0 L 20 -7 L 4 -7 L 4 0 Z" fill="currentColor"/>
+                                </svg>
                                 <span class="iq-visual-option-title">2 Story</span>
                             </div>
                             <div class="iq-visual-option${structure.stories === 2.5 ? ' iq-active' : ''}" data-value="2.5">
+                                <svg viewBox="-2 -38 50 40" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M 1 0 L 1 -12 L 0 -12 L 0 -13 L 12 -21 L 21 -21 L 21 -25 L 20 -25 L 20 -26 L 33 -36 L 46 -26 L 46 -25 L 45 -25 L 45 0 L 35 0 L 35 -6 L 31 -6 L 31 0 L 20 0 L 20 -7 L 4 -7 L 4 0 Z" fill="currentColor"/>
+                                </svg>
                                 <span class="iq-visual-option-title">2.5 Story</span>
                             </div>
                             <div class="iq-visual-option${structure.stories === 3 ? ' iq-active' : ''}" data-value="3">
+                                <svg viewBox="-12 -46 72 54" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M -9 6 L -9 -10 L -10 -10 L -10 -11 L 2 -19 L 15 -19 L 15 -28 L 14 -28 L 14 -29 L 34 -44 L 54 -29 L 54 -28 L 53 -28 L 53 -11 L 59 -7 L 59 -6 L 58 -6 L 58 6 L 36 6 L 36 -1 L 32 -1 L 32 6 L 20 6 L 20 -1 L 4 -1 L 4 6 L 2 6 L 2 -1 L -6 -1 L -6 6 Z" fill="currentColor"/>
+                                </svg>
                                 <span class="iq-visual-option-title">3 Story</span>
                             </div>
                         </div>
@@ -964,15 +1049,33 @@ document.addEventListener('DOMContentLoaded', function () {
                         <span class="iq-visual-option-group-title">Gutter coverage</span>
                         <div class="iq-visual-option-group" data-field="gutterPercent" data-structure="${i}">
                             <div class="iq-visual-option${structure.gutterPercent === 25 ? ' iq-active' : ''}" data-value="25">
+                                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <rect x="2" y="2" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1" opacity="0.3"/>
+                                    <line x1="2" y1="2" x2="2" y2="22" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                                </svg>
                                 <span class="iq-visual-option-title">25%</span>
                             </div>
                             <div class="iq-visual-option${structure.gutterPercent === 50 ? ' iq-active' : ''}" data-value="50">
+                                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <rect x="2" y="2" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1" opacity="0.3"/>
+                                    <line x1="2" y1="2" x2="2" y2="22" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                                    <line x1="2" y1="22" x2="22" y2="22" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                                </svg>
                                 <span class="iq-visual-option-title">50%</span>
                             </div>
                             <div class="iq-visual-option${structure.gutterPercent === 75 ? ' iq-active' : ''}" data-value="75">
+                                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <rect x="2" y="2" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1" opacity="0.3"/>
+                                    <line x1="2" y1="2" x2="2" y2="22" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                                    <line x1="2" y1="22" x2="22" y2="22" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                                    <line x1="22" y1="22" x2="22" y2="2" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                                </svg>
                                 <span class="iq-visual-option-title">75%</span>
                             </div>
                             <div class="iq-visual-option${structure.gutterPercent === 100 ? ' iq-active' : ''}" data-value="100">
+                                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <rect x="2" y="2" width="20" height="20" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
                                 <span class="iq-visual-option-title">100%</span>
                             </div>
                         </div>
