@@ -1,8 +1,72 @@
 // Initialize MapLibre GL JS
 
-// On DOM load, initialize the map
+// Load external dependencies, then initialize the app
+(function() {
+    const dependencies = {
+        styles: [
+            'https://unpkg.com/maplibre-gl@4.3.2/dist/maplibre-gl.css',
+            'https://unpkg.com/@maptiler/geocoding-control@latest/style.css'
+        ],
+        scripts: [
+            'https://unpkg.com/maplibre-gl@4.3.2/dist/maplibre-gl.js',
+            'https://unpkg.com/@maptiler/geocoding-control@latest/maplibregl.umd.js',
+            'https://unpkg.com/@turf/turf@6.5.0/turf.min.js',
+            'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
+        ]
+    };
 
-document.addEventListener('DOMContentLoaded', function () {
+    function loadStyle(href) {
+        return new Promise(function(resolve) {
+            // Skip if already loaded
+            if (document.querySelector('link[href="' + href + '"]')) { resolve(); return; }
+            const link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = href;
+            link.onload = resolve;
+            link.onerror = resolve; // continue even if a stylesheet fails
+            document.head.appendChild(link);
+        });
+    }
+
+    function loadScript(src) {
+        return new Promise(function(resolve, reject) {
+            // Skip if already loaded
+            if (document.querySelector('script[src="' + src + '"]')) { resolve(); return; }
+            const script = document.createElement('script');
+            script.src = src;
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+        });
+    }
+
+    function loadAllDependencies() {
+        // Load all stylesheets in parallel
+        const stylePromises = dependencies.styles.map(loadStyle);
+
+        // Load scripts sequentially (order matters: maplibre must load before geocoding control)
+        const scriptsLoaded = dependencies.scripts.reduce(function(chain, src) {
+            return chain.then(function() { return loadScript(src); });
+        }, Promise.resolve());
+
+        return Promise.all([Promise.all(stylePromises), scriptsLoaded]);
+    }
+
+    function onReady(fn) {
+        if (document.readyState !== 'loading') {
+            fn();
+        } else {
+            document.addEventListener('DOMContentLoaded', fn);
+        }
+    }
+
+    onReady(function() {
+        loadAllDependencies().then(initApp).catch(function(err) {
+            console.error('Failed to load dependencies:', err);
+        });
+    });
+
+function initApp() {
     const debug = false;
     const MAPTILER_API_KEY = "BkQkq2NwcJAaCLNx663p";
 
@@ -10,11 +74,33 @@ document.addEventListener('DOMContentLoaded', function () {
     let currentStep = 1;
     let selectedCategory = null;
     let selectedService = null;
-    
+    let selectedAddress = '';
+    // Address parts (top-level scope)
+    var selectedStreet = '';
+    var selectedCity = '';
+    var selectedState = '';
+    var selectedZip = '';
     // Pricing database parsed from HTML
     let pricingDatabase = [];
     let categories = [];
     let services = {}; // keyed by category name
+
+    // Company info parsed from HTML
+    let companyInfo = {};
+    function parseCompanyInfo() {
+        const el = document.querySelector('.iq-company-info');
+        if (!el) return;
+        companyInfo = {
+            logo: el.querySelector('.iq-company-logo')?.src || '',
+            name: el.querySelector('.iq-company-name')?.innerText?.trim() || '',
+            street: el.querySelector('.iq-company-street-address')?.innerText?.trim() || '',
+            cityStateZip: el.querySelector('.iq-company-city-state-zip')?.innerText?.trim() || '',
+            phone: el.querySelector('.iq-company-phone')?.innerText?.trim() || '',
+            email: el.querySelector('.iq-company-email')?.innerText?.trim() || '',
+            website: el.querySelector('.iq-company-website')?.innerText?.trim() || '',
+            license: el.querySelector('.iq-company-license')?.innerText?.trim() || ''
+        };
+    }
 
     // Parse the pricing database from HTML
     function parsePricingDatabase() {
@@ -31,11 +117,13 @@ document.addEventListener('DOMContentLoaded', function () {
             const formulaHigh = option.querySelector('.iq-price-formula-high')?.innerText?.trim() || '';
             const brandLogo = option.querySelector('.iq-brand-logo')?.src || '';
             const productThumb = option.querySelector('.iq-product-thumbnail')?.src || '';
+            const productDescription = option.querySelector('.iq-product-description')?.innerText?.trim() || '';
 
             const product = {
                 category: categoryName,
                 service: serviceName,
                 product: productName,
+                description: productDescription,
                 formulaLow: formulaLow,
                 formulaHigh: formulaHigh,
                 brandLogo: brandLogo,
@@ -111,15 +199,900 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    // Category icons
-    const categoryIcons = {
-        'Roofing': '🏠',
-        'Siding': '🧱',
-        'Gutters': '🌧️'
-    };
+    // Inject all styles into the page
+    function injectStyles() {
+        if (document.getElementById('iq-injected-styles')) return;
+        const style = document.createElement('style');
+        style.id = 'iq-injected-styles';
+        style.textContent = `
+#iq-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+}
 
-    // Initialize pricing database
+#iq-main {
+    background-color: white;
+    height: auto;
+    width: 600px;
+    max-width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 16px;
+    border-radius: 16px;
+    box-shadow: 0 0 12px rgba(29, 35, 56, 0.2);
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+/* Step Indicator */
+#iq-step-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px 0;
+    gap: 4px;
+}
+
+.iq-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    opacity: 0.4;
+    transition: opacity 0.3s ease;
+}
+
+.iq-step.iq-step-active,
+.iq-step.iq-step-completed {
+    opacity: 1;
+}
+
+.iq-step-number {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background-color: #cfd8e2;
+    color: #4a5d74;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 12px;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.iq-step.iq-step-active .iq-step-number {
+    background-color: #007aff;
+    color: white;
+}
+
+.iq-step.iq-step-completed .iq-step-number {
+    background-color: #34c759;
+    color: white;
+}
+
+.iq-step-label {
+    font-size: 10px;
+    color: #4a5d74;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.iq-step-connector {
+    width: 20px;
+    height: 2px;
+    background-color: #cfd8e2;
+    margin-bottom: 18px;
+}
+
+/* Option List (Categories/Services) */
+.iq-option-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.iq-option-card {
+    display: flex;
+    align-items: center;
+    padding: 16px 20px;
+    background-color: #f2f4f8;
+    border: 2px solid transparent;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 1.1em;
+    font-weight: 500;
+    color: #0e1012;
+}
+
+.iq-option-card:hover {
+    background-color: #e8ebf0;
+    border-color: #007aff;
+}
+
+.iq-option-card.iq-active {
+    background-color: #f0f7ff;
+    border-color: #007aff;
+}
+
+.iq-option-card-icon {
+    margin-right: 12px;
+    font-size: 1.5em;
+}
+
+/* Views Container */
+#iq-views-container {
+    position: relative;
+}
+
+/* Views */
+.iq-view {
+    display: none;
+    flex-direction: column;
+    gap: 16px;
+    opacity: 0;
+    transform: translateX(30px);
+}
+
+.iq-view.iq-view-entering {
+    display: flex;
+    opacity: 0;
+    transform: translateX(30px);
+    transition: none;
+}
+
+.iq-view.iq-view-entering-back {
+    display: flex;
+    opacity: 0;
+    transform: translateX(-30px);
+    transition: none;
+}
+
+.iq-view.iq-view-active {
+    display: flex;
+    opacity: 1;
+    transform: translateX(0);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.iq-view.iq-view-exiting {
+    display: flex;
+    opacity: 0;
+    transform: translateX(-30px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    pointer-events: none;
+}
+
+.iq-view.iq-view-exiting-back {
+    display: flex;
+    opacity: 0;
+    transform: translateX(30px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    pointer-events: none;
+}
+
+.iq-view-title {
+    margin: 0;
+    color: #0e1012;
+    text-align: center;
+    font-size: 1.5em;
+}
+
+.iq-view-subtitle {
+    margin: 0;
+    font-size: 0.95em;
+    color: #637182;
+    text-align: center;
+
+}
+
+/* Step 3 - Find Property */
+#iq-step3-bottom {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+#iq-step3-hint {
+    margin: 0;
+    color: #637182;
+    font-size: 0.9em;
+    text-align: center;
+}
+
+#iq-selected-summary {
+    text-align: center;
+    font-weight: 500;
+    color: #007aff;
+    min-height: 1.2em;
+}
+
+/* Structure Questions */
+.iq-structure-questions {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-left: auto;
+}
+
+.iq-question-group {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    background-color: #f8f9fa;
+    border: 1px solid #e4e8ed;
+    border-radius: 12px;
+    padding: 12px 16px;
+    gap: 8px;
+}
+
+.iq-question-group .iq-visual-option-group-title {
+    margin-bottom: 0;
+    font-weight: 600;
+    color: #0e1012;
+}
+
+.iq-question-group .iq-visual-option-group {
+    justify-content: flex-start;
+}
+
+/* Navigation Buttons */
+.iq-nav-buttons {
+    display: flex;
+    gap: 12px;
+    margin-top: 8px;
+}
+
+.iq-nav-buttons .iq-button {
+    flex: 1;
+}
+
+.iq-button-secondary {
+    background-color: #f2f4f8 !important;
+    color: #4a5d74 !important;
+}
+
+.iq-button-secondary:hover {
+    background-color: #e4e8ed !important;
+}
+
+a.iq-button {
+    text-decoration: none;
+    text-align: center;
+}
+
+/* Pricing View */
+#iq-pricing-breakdown {
+    display: flex;
+    flex-direction: column;
+    gap: 80px;
+}
+
+.iq-pricing-structure {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.iq-pricing-structure-thumbnail {
+    width: 80px;
+    height: 80px;
+    border-radius: 8px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.iq-pricing-structure-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #e4e8ed;
+}
+
+.iq-pricing-structure-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.iq-pricing-structure-name {
+    font-weight: 600;
+    font-size: 1.1em;
+    color: #0e1012;
+}
+
+.iq-pricing-structure-details {
+    font-size: 0.85em;
+    color: #637182;
+}
+
+.iq-pricing-option-label {
+    font-weight: 600;
+    font-size: 0.9em;
+    color: #4a5d74;
+    margin-top: 4px;
+}
+
+.iq-pricing-products {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.iq-pricing-product {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    background-color: #f2f4f8;
+    border-radius: 12px;
+    padding: 12px;
+}
+
+.iq-pricing-product-thumb {
+    width: 60px;
+    height: 60px;
+    border-radius: 8px;
+    overflow: hidden;
+    flex-shrink: 0;
+    object-fit: cover;
+}
+
+.iq-pricing-product-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+}
+
+.iq-pricing-product-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.iq-pricing-product-name {
+    font-weight: 600;
+    color: #0e1012;
+    font-size: 0.95em;
+}
+
+.iq-pricing-product-price {
+    font-weight: 600;
+    color: #007aff;
+    white-space: nowrap;
+    font-size: 0.95em;
+}
+
+.iq-pricing-product-description {
+    font-size: 0.85em;
+    color: #637182;
+    margin: 0;
+    line-height: 1.4;
+}
+
+.iq-pricing-item {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    background-color: #f2f4f8;
+    border-radius: 12px;
+    padding: 12px;
+}
+
+.iq-pricing-thumbnail {
+    width: 60px;
+    height: 60px;
+    border-radius: 8px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.iq-pricing-item-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+}
+
+.iq-pricing-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+.iq-pricing-item-name {
+    font-weight: 600;
+    color: #0e1012;
+}
+
+.iq-pricing-item-price {
+    font-weight: 600;
+    color: #007aff;
+}
+
+.iq-pricing-item-details {
+    font-size: 0.85em;
+    color: #637182;
+}
+
+#iq-map-wrapper {
+    width: 600px;
+    max-width: 100%;
+    aspect-ratio: 16/9;
+    border-radius: 16px;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+#iq-map {
+    height: 100%;
+    width: 100%;
+}
+
+.iq-visual-option-group {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    background-color: transparent;
+}
+
+.iq-visual-option {
+    appearance: none;
+    border: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    background-color: white;
+    border: 0.5px solid #cfd8e2;
+    border-radius: 8px;
+    padding: 12px 16px;
+    cursor: pointer;
+    transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease;
+    box-sizing: border-box;
+}
+
+.iq-visual-option:hover {
+    background-color: #f8f9fa;
+}
+
+.iq-visual-option:active {
+    transform: scale(0.925);
+}
+
+.iq-visual-option svg {
+    width: 24px;
+    height: 24px;
+    color: #4a5d74;
+    object-fit: contain;
+}
+
+.iq-visual-option.iq-active {
+    border-color: #007aff;
+    background-color: #f0f7ff;
+    box-shadow: 0 0 0 1.5px #007aff;
+}
+
+.iq-visual-option.iq-active svg {
+    color: #007aff;
+}
+
+.iq-visual-option-title {
+    margin-top: 0.5em;
+    font-size: 0.8em;
+}
+
+.iq-structure-item {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 16px;
+    background-color: #f2f4f8;
+    color: #0e1012;
+    border-radius: 16px;
+    padding: 16px;
+    flex-wrap: wrap;
+}
+
+.iq-structure-thumbnail {
+    width: 80px;
+    height: 80px;
+    border-radius: 8px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.iq-structure-item-info {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    min-width: 100px;
+}
+
+.iq-structure-item h3 {
+    font-size: 1.15em;
+    margin: 0 0 0.125em 0;
+}
+
+.iq-structure-item-area {
+    font-size: 0.9em;
+    color: #637182;
+    margin-bottom: 0;
+}
+
+.iq-structure-item-pitch {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    flex: 1;
+    margin-left: auto;
+}
+
+.iq-visual-option-group-title {
+    margin-bottom: 0.5em;
+    font-size: 0.85em;
+    color: #4a5d74;
+}
+
+#iq-structure-list {
+    list-style-type: none;
+    padding: 0;
+    margin: 0;
+    margin-block-start: 0;
+    margin-block-end: 0;
+    padding-inline-start: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+#iq-bottom-container {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.iq-button {
+    appearance: none;
+    border: none;
+    background-color: #007aff;
+    color: white;
+    padding: 16px 32px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1em;
+    transition: background-color 0.2s;
+}
+
+.iq-button:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}
+
+/* Map attribution */
+.maplibregl-ctrl-attrib.maplibregl-compact {
+    margin: 32px;
+}
+
+/* Geocoding control */
+.maplibregl-ctrl-top-left .maplibregl-ctrl {
+    margin: 32px;
+}
+
+.maplibregl-ctrl-geocoder form {
+    font-family: var(--font) !important;
+    border-radius: 12px !important;
+    width: 100% !important;
+    min-width: 300px !important;
+    max-width: 100% !important;
+}
+
+.maplibregl-ctrl-geocoder form div {
+    padding: 8px;
+    border-radius: 16px !important;
+}
+
+.maplibregl-ctrl-geocoder form div input {
+    font-size: 14px !important;
+    text-overflow: ellipsis;
+}
+
+@media screen and (max-width: 480px) {
+    .maplibregl-ctrl-geocoder form div input {
+        font-size: 16px !important;
+    }
+
+    .maplibregl-ctrl-attrib.maplibregl-compact {
+        margin: 8px;
+    }
+
+    .maplibregl-ctrl-top-left .maplibregl-ctrl {
+        margin: 8px;
+    }
+
+    .maplibregl-ctrl-geocoder form {
+        font-family: var(--font) !important;
+        border-radius: 12px !important;
+        width: 100% !important;
+        min-width: unset !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+    #iq-main {
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    #iq-map-wrapper {
+        width: 100%;
+        aspect-ratio: 1/1;
+    }
+
+    #iq-step-indicator {
+        gap: 2px;
+        padding: 12px 0;
+    }
+
+    .iq-step-connector {
+        width: 12px;
+    }
+
+    .iq-step-label {
+        font-size: 8px;
+    }
+
+    .iq-step-number {
+        width: 24px;
+        height: 24px;
+        font-size: 11px;
+    }
+
+    .iq-structure-item {
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .iq-structure-thumbnail {
+        width: 100%;
+        height: 120px;
+    }
+
+    .iq-structure-item-info {
+        align-items: center;
+        margin-bottom: 8px;
+    }
+
+    .iq-structure-questions {
+        align-items: center;
+        margin-left: 0;
+        width: 100%;
+    }
+
+    .iq-question-group {
+        align-items: center;
+        width: 100%;
+    }
+
+    .iq-structure-item-pitch {
+        align-items: center;
+        margin-left: 0;
+    }
+
+    .iq-visual-option-group {
+        justify-content: center;
+    }
+
+    .iq-visual-option {
+        padding: 12px 10px;
+    }
+
+    .iq-pricing-item {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .iq-pricing-thumbnail {
+        width: 100%;
+        height: 100px;
+    }
+
+    .iq-pricing-item-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+    }
+
+    .iq-pricing-product {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .iq-pricing-product-thumb {
+        width: 100%;
+        height: 100px;
+    }
+
+    .iq-pricing-product-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .iq-nav-buttons {
+        flex-direction: column;
+    }
+}
+
+.maplibregl-ctrl-geocoder form div div.clear-button-container,
+.maplibregl-ctrl-geocoder form div div.clear-button-container button {
+    cursor: pointer !important;
+}
+
+.maplibregl-ctrl-geocoder form div button.search-button {
+    padding-left: 4px;
+}
+
+.maplibregl-ctrl-geocoder form ul {
+    border-radius: 16px !important;
+}
+
+.maplibregl-ctrl-geocoder form ul li {
+    cursor: pointer !important;
+    animation: none !important;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+}
+
+.maplibregl-ctrl-geocoder form ul li img {
+    display: none !important;
+}
+
+.maplibregl-ctrl-geocoder form div.no-results {
+    display: none !important;
+}
+        `;
+        document.head.appendChild(style);
+    }
+
+    // Inject styles before anything else
+    injectStyles();
+
+    // Inject the wizard UI into the page
+    function injectWizardHTML() {
+        // Don't inject if already present
+        if (document.getElementById('iq-main')) return;
+
+        const wrapper = document.createElement('div');
+        wrapper.id = 'iq-wrapper';
+
+        // Insert directly after the script tag that loaded this file
+        const scriptTag = document.querySelector('script[src*="app.js"]');
+        if (scriptTag && scriptTag.parentNode) {
+            scriptTag.parentNode.insertBefore(wrapper, scriptTag.nextSibling);
+        } else {
+            document.body.appendChild(wrapper);
+        }
+
+        wrapper.innerHTML = `
+            <div id="iq-main">
+
+                <!-- Step Indicator -->
+                <div id="iq-step-indicator">
+                    <div class="iq-step iq-step-active" data-step="1">
+                        <div class="iq-step-number">1</div>
+                        <div class="iq-step-label">Type of Work</div>
+                    </div>
+                    <div class="iq-step-connector"></div>
+                    <div class="iq-step" data-step="2">
+                        <div class="iq-step-number">2</div>
+                        <div class="iq-step-label">Service</div>
+                    </div>
+                    <div class="iq-step-connector"></div>
+                    <div class="iq-step" data-step="3">
+                        <div class="iq-step-number">3</div>
+                        <div class="iq-step-label">Find Property</div>
+                    </div>
+                    <div class="iq-step-connector"></div>
+                    <div class="iq-step" data-step="4">
+                        <div class="iq-step-number">4</div>
+                        <div class="iq-step-label">Confirm Details</div>
+                    </div>
+                    <div class="iq-step-connector"></div>
+                    <div class="iq-step" data-step="5">
+                        <div class="iq-step-number">5</div>
+                        <div class="iq-step-label">See Pricing</div>
+                    </div>
+                </div>
+
+                <div id="iq-views-container">
+                    <!-- Step 1: Choose Category -->
+                    <div id="iq-view-1" class="iq-view iq-view-active">
+                        <h2 class="iq-view-title">What type of work do you need?</h2>
+                        <p class="iq-view-subtitle">Select a category to get started</p>
+                        <div id="iq-category-list" class="iq-option-list"></div>
+                    </div>
+
+                    <!-- Step 2: Choose Service -->
+                    <div id="iq-view-2" class="iq-view">
+                        <h2 class="iq-view-title">What service do you need?</h2>
+                        <p class="iq-view-subtitle">Select a service</p>
+                        <div id="iq-service-list" class="iq-option-list"></div>
+                        <div class="iq-nav-buttons">
+                            <button id="iq-back-step2" class="iq-button iq-button-secondary">Back</button>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Find Property -->
+                    <div id="iq-view-3" class="iq-view">
+                        <div id="iq-top-container"></div>
+                        <div id="iq-middle-container">
+                            <div id="iq-map-wrapper">
+                                <div id="iq-map"></div>
+                            </div>
+                        </div>
+                        <div id="iq-step3-bottom">
+                            <p id="iq-step3-hint">Search for your address, then click on each structure you'd like included in your quote.</p>
+                            <div id="iq-selected-summary"></div>
+                            <div class="iq-nav-buttons">
+                                <button id="iq-back-step3" class="iq-button iq-button-secondary">Back</button>
+                                <button id="iq-next-step3" class="iq-button" disabled>Continue</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 4: Confirm Selection -->
+                    <div id="iq-view-4" class="iq-view">
+                        <h2 class="iq-view-title">Confirm Details</h2>
+                        <p class="iq-view-subtitle" id="iq-step4-subtitle">Answer a few questions about each structure</p>
+                        <ul id="iq-structure-list"></ul>
+                        <div class="iq-nav-buttons">
+                            <button id="iq-back-step4" class="iq-button iq-button-secondary">Back</button>
+                            <button id="iq-next-step4" class="iq-button" disabled>See Pricing</button>
+                        </div>
+                    </div>
+
+                    <!-- Step 5: See Pricing -->
+                    <div id="iq-view-5" class="iq-view">
+                        <h2 class="iq-view-title" id="iq-step5-title">Your Estimate</h2>
+                        <p class="iq-view-subtitle" id="iq-step5-subtitle">Here's your instant estimate</p>
+                        <div id="iq-pricing-breakdown"></div>
+                        <div class="iq-nav-buttons">
+                            <button id="iq-back-step5" class="iq-button iq-button-secondary">Back</button>
+                            <button id="iq-save-estimate" class="iq-button iq-button-secondary">Save Estimate</button>
+                            <a id="iq-request-quote" href="/contact" class="iq-button">Request a Formal Quote</a>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        `;
+    }
+
+    // Inject the UI before initializing
+    injectWizardHTML();
+
+    // Initialize pricing database and company info
     parsePricingDatabase();
+    parseCompanyInfo();
 
     const map = new maplibregl.Map({
         container: 'iq-map',
@@ -414,14 +1387,50 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         gc.on('pick', function (e) {
-
+            // Log the full geocoder pick event for inspection
+            console.log('Geocoder pick event:', e);
+            // Parse and store address parts
+            if (e.feature && e.feature.place_name) {
+                let addr = e.feature.place_name.replace(/, United States$/, '');
+                selectedAddress = addr;
+                // Example: "6697 Promontory Drive, Eden Prairie, Minnesota 55346"
+                const parts = addr.split(',').map(s => s.trim());
+                selectedStreet = parts[0] || '';
+                selectedCity = parts[1] || '';
+                let stateZip = parts[2] || '';
+                // State and zip
+                let state = '', zip = '';
+                const stateZipMatch = stateZip.match(/([A-Za-z ]+)\s*(\d{5})?/);
+                if (stateZipMatch) {
+                    state = stateZipMatch[1].trim();
+                    zip = stateZipMatch[2] || '';
+                }
+                // Convert state to 2-letter code
+                const stateMap = {
+                    'Minnesota': 'MN', 'Wisconsin': 'WI', 'Iowa': 'IA', 'Illinois': 'IL', 'North Dakota': 'ND', 'South Dakota': 'SD',
+                    'Missouri': 'MO', 'Michigan': 'MI', 'Nebraska': 'NE', 'Kansas': 'KS', 'Indiana': 'IN', 'Ohio': 'OH', 'Colorado': 'CO',
+                    'Texas': 'TX', 'California': 'CA', 'New York': 'NY', 'Florida': 'FL', 'Georgia': 'GA', 'Pennsylvania': 'PA', 'Virginia': 'VA',
+                    'North Carolina': 'NC', 'South Carolina': 'SC', 'Tennessee': 'TN', 'Kentucky': 'KY', 'Alabama': 'AL', 'Arkansas': 'AR',
+                    'Oklahoma': 'OK', 'Louisiana': 'LA', 'Mississippi': 'MS', 'West Virginia': 'WV', 'Maryland': 'MD', 'Delaware': 'DE',
+                    'New Jersey': 'NJ', 'Connecticut': 'CT', 'Rhode Island': 'RI', 'Massachusetts': 'MA', 'New Hampshire': 'NH', 'Vermont': 'VT',
+                    'Maine': 'ME', 'Alaska': 'AK', 'Hawaii': 'HI', 'Montana': 'MT', 'Idaho': 'ID', 'Wyoming': 'WY', 'Arizona': 'AZ', 'New Mexico': 'NM',
+                    'Nevada': 'NV', 'Utah': 'UT', 'Oregon': 'OR', 'Washington': 'WA'
+                };
+                selectedState = stateMap[state] || state;
+                selectedZip = zip;
+            }
             // Return if the feature is not a building
             // Necessary because clicking the clear button fires a pick event with no feature for some reason
             if (!e.feature || !e.feature.geometry.coordinates) {
                 return;
             }
+            const coords = e.feature.geometry.coordinates;
 
-            const coords = e.feature.geometry.coordinates
+            // Save the address from the geocoder input
+            if (e.feature.place_name) {
+                selectedAddress = e.feature.place_name;
+            }
+
             const marker = document.querySelector('.maplibregl-marker');
             const pin = marker.querySelector('svg');
             const pinPath = pin.querySelector('path');
@@ -525,7 +1534,6 @@ document.addEventListener('DOMContentLoaded', function () {
             const card = document.createElement('div');
             card.className = 'iq-option-card';
             card.innerHTML = `
-                <span class="iq-option-card-icon">${categoryIcons[category] || '📋'}</span>
                 <span>${category}</span>
             `;
             card.addEventListener('click', () => {
@@ -562,7 +1570,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const backStep4Button = document.getElementById('iq-back-step4');
     const nextStep4Button = document.getElementById('iq-next-step4');
     const backStep5Button = document.getElementById('iq-back-step5');
-    const startOverButton = document.getElementById('iq-start-over');
+    const saveEstimateButton = document.getElementById('iq-save-estimate');
 
     backStep2Button.addEventListener('click', function () {
         goToStep(1);
@@ -588,15 +1596,8 @@ document.addEventListener('DOMContentLoaded', function () {
         goToStep(4);
     });
 
-    startOverButton.addEventListener('click', function () {
-        // Clear everything and start over
-        const clearButton = document.querySelector('.maplibregl-ctrl-geocoder .clear-button-container button');
-        if (clearButton) {
-            clearButton.click();
-        }
-        selectedCategory = null;
-        selectedService = null;
-        goToStep(1);
+    saveEstimateButton.addEventListener('click', function () {
+        generateEstimatePDF();
     });
 
     function goToStep(step) {
@@ -672,7 +1673,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 miniMaps.forEach(m => {
                     m.resize();
                     if (m._structureBounds) {
-                        m.fitBounds(m._structureBounds, { padding: 10, duration: 0 });
+                        m.fitBounds(m._structureBounds, { padding: m._fitPadding || 20, duration: 0 });
                     }
                 });
             }, 300);
@@ -731,9 +1732,17 @@ document.addEventListener('DOMContentLoaded', function () {
         cleanupMiniMaps();
         const breakdownContainer = document.getElementById('iq-pricing-breakdown');
         
-        // Update subtitle
+        // Update title and subtitle
+        const title = document.getElementById('iq-step5-title');
         const subtitle = document.getElementById('iq-step5-subtitle');
-        subtitle.textContent = `Here's your instant ${selectedService.toLowerCase()} estimate`;
+        if (selectedStreet && selectedCity && selectedState) {
+            // Full formatted address in subtitle with line break
+            title.textContent = `Instant ${selectedService || ''} Estimate`;
+            subtitle.innerHTML = `${selectedStreet}<br>${selectedCity}, ${selectedState} ${selectedZip}`;
+        } else {
+            title.textContent = `Instant ${selectedService || ''} Estimate`;
+            subtitle.textContent = selectedAddress || 'Your Estimate';
+        }
         
         breakdownContainer.innerHTML = '';
         
@@ -802,7 +1811,7 @@ document.addEventListener('DOMContentLoaded', function () {
             structureDiv.className = 'iq-pricing-structure';
             
             let productsHTML = '';
-            relevantProducts.forEach(product => {
+            relevantProducts.forEach((product, optionIndex) => {
                 const priceLow = evaluateFormula(product.formulaLow, variables);
                 const priceHigh = evaluateFormula(product.formulaHigh, variables);
                 
@@ -810,6 +1819,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 const priceHighFormatted = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(priceHigh);
                 
                 productsHTML += `
+                    <div class="iq-pricing-option-label">Option ${optionIndex + 1}</div>
                     <div class="iq-pricing-product">
                         <img class="iq-pricing-product-thumb" src="${product.productThumb}" alt="${product.product}">
                         <div class="iq-pricing-product-content">
@@ -817,7 +1827,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                 <span class="iq-pricing-product-name">${product.product}</span>
                                 <span class="iq-pricing-product-price">${priceLowFormatted} - ${priceHighFormatted}</span>
                             </div>
-                            <img class="iq-pricing-product-brand" src="${product.brandLogo}" alt="">
+                            ${product.description ? '<p class="iq-pricing-product-description">' + product.description + '</p>' : ''}
                         </div>
                     </div>
                 `;
@@ -843,30 +1853,333 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-
-    // Remove extraneous suggestions from the geocoder and clean up the address
-    const observer = new MutationObserver(function(mutations) {
-        mutations.forEach(function(mutation) {
-            const suggestions = document.querySelectorAll('.maplibregl-ctrl-geocoder form ul li');
-            suggestions.forEach(function(suggestion) {
-                if (suggestion.innerHTML.includes('street.svg')) {
-                    suggestion.remove();
-                }
-                suggestionLine2s = suggestion.querySelectorAll('span span.line2');
-                suggestionLine2s.forEach(function(suggestionLine2) {
-                    if (suggestionLine2.innerHTML.includes('United States')) {
-                        suggestionLine2.innerHTML = suggestionLine2.innerHTML.replace(', United States', '');
+    // Generate and save a PDF of the estimate
+    // Helper: load an image as a data URL (handles cross-origin)
+    function loadImageAsDataURL(src, whiteBackground) {
+        return new Promise((resolve) => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = function() {
+                try {
+                    const c = document.createElement('canvas');
+                    c.width = img.naturalWidth;
+                    c.height = img.naturalHeight;
+                    const ctx = c.getContext('2d');
+                    if (whiteBackground) {
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillRect(0, 0, c.width, c.height);
                     }
-                });
-
-            });
-
+                    ctx.drawImage(img, 0, 0);
+                    resolve(c.toDataURL(whiteBackground ? 'image/jpeg' : 'image/png', 0.9));
+                } catch (e) {
+                    resolve(null);
+                }
+            };
+            img.onerror = function() { resolve(null); };
+            img.src = src;
         });
-    });
-    observer.observe(document, {
-        childList: true,
-        subtree: true
-    });
+    }
+
+    // Helper: draw a rounded-corner clipping path on a 2D canvas context
+    function roundedClip(ctx, x, y, w, h, r) {
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + w - r, y);
+        ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+        ctx.lineTo(x + w, y + h - r);
+        ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+        ctx.lineTo(x + r, y + h);
+        ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+        ctx.lineTo(x, y + r);
+        ctx.quadraticCurveTo(x, y, x + r, y);
+        ctx.closePath();
+        ctx.clip();
+    }
+
+    // Helper: apply rounded corners to an image data URL
+    function roundImageCorners(dataUrl, radius) {
+        return new Promise((resolve) => {
+            const img = new Image();
+            img.onload = function() {
+                const c = document.createElement('canvas');
+                c.width = img.naturalWidth;
+                c.height = img.naturalHeight;
+                const ctx = c.getContext('2d');
+                const r = radius * (img.naturalWidth / 100); // scale radius relative to image
+                roundedClip(ctx, 0, 0, c.width, c.height, r);
+                ctx.drawImage(img, 0, 0);
+                resolve(c.toDataURL('image/png'));
+            };
+            img.onerror = function() { resolve(dataUrl); };
+            img.src = dataUrl;
+        });
+    }
+
+    async function generateEstimatePDF() {
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF('p', 'pt', 'letter');
+        const pageWidth = pdf.internal.pageSize.getWidth();
+        const pageHeight = pdf.internal.pageSize.getHeight();
+        const margin = 40;
+        const contentWidth = pageWidth - margin * 2;
+        let y = margin;
+
+        // Helper: add a new page if needed
+        function checkPage(needed) {
+            if (y + needed > pageHeight - margin) {
+                pdf.addPage();
+                y = margin;
+            }
+        }
+
+        // --- Pre-load all product images in parallel ---
+        const relevantProducts = pricingDatabase.filter(p =>
+            p.category === selectedCategory && p.service === selectedService
+        );
+        const productImageCache = {};
+        await Promise.all(relevantProducts.map(async (product) => {
+            if (product.productThumb) {
+                productImageCache[product.productThumb] = await loadImageAsDataURL(product.productThumb);
+            }
+        }));
+
+        // --- Company header ---
+        const logoHeight = 40;
+        if (companyInfo.logo) {
+            try {
+                const logoData = await loadImageAsDataURL(companyInfo.logo, true);
+                if (logoData) {
+                    const img = new Image();
+                    img.src = logoData;
+                    await new Promise(r => { img.onload = r; });
+                    const aspect = img.naturalWidth / img.naturalHeight;
+                    const logoW = logoHeight * aspect;
+                    pdf.addImage(logoData, 'JPEG', margin, y, logoW, logoHeight);
+                }
+            } catch (e) {
+                // Logo failed to load, skip it
+            }
+        }
+
+        // Company info text (right-aligned)
+        pdf.setFontSize(9);
+        pdf.setTextColor(99, 113, 130); // #637182
+        const infoLines = [
+            companyInfo.street,
+            companyInfo.cityStateZip,
+            companyInfo.phone,
+            companyInfo.email,
+            companyInfo.website,
+            companyInfo.license
+        ].filter(Boolean);
+        infoLines.forEach((line, i) => {
+            pdf.text(line, pageWidth - margin, y + 10 + i * 13, { align: 'right' });
+        });
+
+        y += Math.max(logoHeight, infoLines.length * 13) + 20;
+
+        // Divider line
+        pdf.setDrawColor(228, 232, 237); // #e4e8ed
+        pdf.setLineWidth(0.5);
+        pdf.line(margin, y, pageWidth - margin, y);
+        y += 30;
+
+        // --- Title ---
+        pdf.setFontSize(20);
+        pdf.setTextColor(14, 16, 18); // #0e1012
+        pdf.setFont(undefined, 'bold');
+        const titleText = `Instant ${selectedService || ''} Estimate`;
+        pdf.text(titleText, margin, y);
+        y += 30;
+
+        // Subtitle (Address)
+        pdf.setFontSize(11);
+        pdf.setTextColor(99, 113, 130); // #637182
+        pdf.setFont(undefined, 'normal');
+        if (selectedStreet && selectedCity && selectedState) {
+            pdf.text(selectedStreet, margin, y);
+            y += 14;
+            pdf.text(`${selectedCity}, ${selectedState} ${selectedZip}`, margin, y);
+            y += 20;
+        } else if (selectedAddress) {
+            let addr = selectedAddress.replace(/, United States$/, '');
+            const parts = addr.split(',').map(s => s.trim());
+            const street = parts[0] || '';
+            const city = parts[1] || '';
+            const stateZip = parts[2] || '';
+            pdf.text(street, margin, y);
+            y += 14;
+            pdf.text(`${city}, ${stateZip}`, margin, y);
+            y += 20;
+        } else {
+            pdf.text('Your Estimate', margin, y);
+            y += 20;
+        }
+
+        // Date
+        const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+        pdf.setFontSize(10);
+        pdf.setTextColor(99, 113, 130);
+        pdf.text(dateStr, margin, y);
+        y += 10;
+        y += 10;
+
+        // --- Structures ---
+        for (let i = 0; i < selectedBuildings.length; i++) {
+            const building = selectedBuildings[i];
+            const buildingArea = building.area;
+            const perimeterMeters = turf.length(turf.lineString(building.polygon), { units: 'meters' });
+            const perimeterFeet = perimeterMeters * 3.28084;
+
+            let roofArea = buildingArea;
+            let pitchLabel = '';
+            if (building.roofPitch === 'shallow') { roofArea = buildingArea * 1.1; pitchLabel = 'Shallow pitch'; }
+            else if (building.roofPitch === 'medium') { roofArea = buildingArea * 1.2; pitchLabel = 'Medium pitch'; }
+            else if (building.roofPitch === 'steep') { roofArea = buildingArea * 1.3; pitchLabel = 'Steep pitch'; }
+
+            let wallArea = 0, storiesLabel = '';
+            if (building.stories) {
+                wallArea = perimeterFeet * building.stories * 10;
+                storiesLabel = building.stories + (building.stories === 1 ? ' story' : ' stories');
+            }
+
+            let gutterLength = 0, gutterLabel = '';
+            if (building.gutterPercent) {
+                gutterLength = perimeterFeet * (building.gutterPercent / 100);
+                gutterLabel = building.gutterPercent + '% coverage';
+            }
+
+            const variables = { roofArea, wallArea, gutterLength };
+            const areaSqft = Math.round(buildingArea).toLocaleString();
+            let detailParts = [areaSqft + ' ft²'];
+            if (pitchLabel) detailParts.push(pitchLabel);
+            if (storiesLabel) detailParts.push(storiesLabel);
+            if (gutterLabel) detailParts.push(gutterLabel);
+            const detailString = detailParts.join(' · ');
+
+            // --- Thumbnail map capture + structure header (inline) ---
+            const thumbnailEl = document.getElementById('pricing-structure-thumbnail-' + i);
+            const mapThumbSize = 56;
+            let mapThumbData = null;
+            if (thumbnailEl) {
+                try {
+                    const miniMap = miniMaps.find(m => m.getContainer().parentElement === thumbnailEl || m.getContainer() === thumbnailEl);
+                    if (miniMap) {
+                        miniMap.triggerRepaint();
+                        await new Promise(r => miniMap.once('render', r));
+                        
+                        const glCanvas = miniMap.getCanvas();
+                        const composite = document.createElement('canvas');
+                        composite.width = glCanvas.width;
+                        composite.height = glCanvas.height;
+                        const ctx = composite.getContext('2d');
+                        ctx.drawImage(glCanvas, 0, 0);
+                        
+                        const imgData = composite.toDataURL('image/png');
+                        mapThumbData = await roundImageCorners(imgData, 6);
+                    }
+                } catch (e) { /* skip */ }
+            }
+
+            checkPage(mapThumbSize + 30);
+
+            // Draw thumbnail + structure header on same line
+            const headerY = y;
+            if (mapThumbData) {
+                pdf.addImage(mapThumbData, 'PNG', margin, y, mapThumbSize, mapThumbSize);
+            }
+            const textX = mapThumbData ? margin + mapThumbSize + 12 : margin;
+
+            // Structure name
+            pdf.setFontSize(14);
+            pdf.setTextColor(14, 16, 18);
+            pdf.setFont(undefined, 'bold');
+            pdf.text(logicalIndex(i) + ' Structure', textX, y + 16);
+
+            // Structure details
+            pdf.setFontSize(10);
+            pdf.setTextColor(99, 113, 130);
+            pdf.setFont(undefined, 'normal');
+            pdf.text(detailString, textX, y + 32);
+
+            y += mapThumbSize + 8;
+
+            // Divider
+            pdf.setDrawColor(228, 232, 237);
+            pdf.line(margin, y, pageWidth - margin, y);
+            y += 14;
+
+            // --- Products ---
+            for (let optionIndex = 0; optionIndex < relevantProducts.length; optionIndex++) {
+                const product = relevantProducts[optionIndex];
+                const priceLow = evaluateFormula(product.formulaLow, variables);
+                const priceHigh = evaluateFormula(product.formulaHigh, variables);
+                const fmt = v => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(v);
+
+                const thumbSize = 44;
+                const cardPadding = 12;
+                const descLines = product.description ? pdf.splitTextToSize(product.description, contentWidth - thumbSize - cardPadding * 3 - 10) : [];
+                const cardHeight = Math.max(thumbSize + cardPadding * 2, 36 + descLines.length * 11);
+                checkPage(cardHeight + 26);
+
+                // Option label
+                pdf.setFontSize(10);
+                pdf.setTextColor(74, 93, 116); // #4a5d74
+                pdf.setFont(undefined, 'bold');
+                pdf.text('Option ' + (optionIndex + 1), margin, y);
+                y += 16;
+
+                // Product card background
+                pdf.setFillColor(242, 244, 248); // #f2f4f8
+                pdf.roundedRect(margin, y - 10, contentWidth, cardHeight, 6, 6, 'F');
+
+                // Product thumbnail image
+                const productImgData = productImageCache[product.productThumb];
+                const textLeft = margin + cardPadding;
+                if (productImgData) {
+                    try {
+                        const roundedProduct = await roundImageCorners(productImgData, 6);
+                        pdf.addImage(roundedProduct, 'PNG', margin + cardPadding, y - 10 + cardPadding, thumbSize, thumbSize);
+                    } catch (e) { /* skip */ }
+                }
+                const textX = productImgData ? margin + cardPadding + thumbSize + 10 : margin + cardPadding;
+                const textMaxWidth = contentWidth - (textX - margin) - cardPadding;
+
+                // Product name
+                pdf.setFontSize(11);
+                pdf.setTextColor(14, 16, 18);
+                pdf.setFont(undefined, 'bold');
+                pdf.text(product.product, textX, y + 4);
+
+                // Price (right-aligned)
+                pdf.setTextColor(0, 122, 255); // #007aff
+                pdf.text(fmt(priceLow) + ' - ' + fmt(priceHigh), pageWidth - margin - cardPadding, y + 4, { align: 'right' });
+
+                if (product.description) {
+                    pdf.setFontSize(9);
+                    pdf.setFont(undefined, 'normal');
+                    pdf.setTextColor(99, 113, 130);
+                    pdf.text(descLines, textX, y + 20);
+                }
+
+                y += cardHeight + 8;
+            }
+
+            y += 20; // spacing between structures
+        }
+
+        // --- Disclaimer ---
+        checkPage(50);
+        pdf.setFontSize(8);
+        pdf.setTextColor(150, 160, 175);
+        pdf.setFont(undefined, 'italic');
+        const disclaimer = 'This estimate is for informational purposes only and does not constitute a binding quote or contract. Final pricing may vary based on site inspection and material availability.';
+        pdf.text(disclaimer, margin, y, { maxWidth: contentWidth });
+
+        // Save
+        const filename = 'Estimate - ' + (selectedService || 'Quote') + ' - ' + dateStr + '.pdf';
+        pdf.save(filename);
+    }
 
 
     // Store mini map instances for cleanup
@@ -877,7 +2190,7 @@ document.addEventListener('DOMContentLoaded', function () {
         miniMaps = [];
     }
 
-    function createStructureThumbnail(containerId, polygon, center) {
+    function createStructureThumbnail(containerId, polygon, center, padding = 15) {
         const bounds = new maplibregl.LngLatBounds();
         polygon.forEach(coord => bounds.extend(coord));
         
@@ -904,11 +2217,13 @@ document.addEventListener('DOMContentLoaded', function () {
             center: center.geometry.coordinates,
             zoom: 18,
             interactive: false,
-            attributionControl: false
+            attributionControl: false,
+            preserveDrawingBuffer: true
         });
         
-        // Store bounds on the map instance for re-fitting after resize
+        // Store bounds and padding on the map instance for re-fitting after resize
         miniMap._structureBounds = bounds;
+        miniMap._fitPadding = padding;
 
         miniMap.on('load', function() {
             miniMap.addSource('structure-polygon', {
@@ -938,12 +2253,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 source: 'structure-polygon',
                 paint: {
                     'line-color': '#0a84ff',
-                    'line-width': 1
+                    'line-width': 2
                 }
             });
 
             // Fit to bounds of the polygon with padding
-            miniMap.fitBounds(bounds, { padding: 10, duration: 0 });
+            miniMap.fitBounds(bounds, { padding: padding, duration: 0 });
         });
 
         miniMaps.push(miniMap);
@@ -987,8 +2302,8 @@ document.addEventListener('DOMContentLoaded', function () {
                                 <span class="iq-visual-option-title">Shallow</span>
                             </div>
                             <div class="iq-visual-option${structure.roofPitch === 'medium' ? ' iq-active' : ''}" data-value="medium">
-                                <svg viewBox="-2 -25 28 27" xmlns="http://www.w3.org/2000/svg">
-                                    <path d="M 1 0 L 1 -12 L 0 -12 L 0 -13 L 12 -23 L 24 -13 L 24 -12 L 23 -12 L 23 0 L 14 0 L 14 -6 L 10 -6 L 10 0 Z" fill="currentColor"/>
+                                <svg viewBox="-2 -31 28 33" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M 1 0 L 1 -15 L 0 -15 L 0 -16 L 14 -27 L 27 -16 L 27 -15 L 26 -15 L 26 0 L 16 0 L 16 -6 L 12 -6 L 12 0 Z" fill="currentColor"/>
                                 </svg>
                                 <span class="iq-visual-option-title">Normal</span>
                             </div>
@@ -1498,4 +2813,5 @@ document.addEventListener('DOMContentLoaded', function () {
     // Initialize step 1
     renderCategories();
 
-});
+}
+})();
