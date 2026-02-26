@@ -11,31 +11,27 @@ jsDelivr serves files from public GitHub repos with the correct `Content-Type` (
 ### URL format
 
 ```
-https://cdn.jsdelivr.net/gh/{owner}/{repo}@{version}/app.js
+https://cdn.jsdelivr.net/gh/issroofing/instant-estimate-tool@{version}/iq-instant-estimate.js
 ```
 
-| Segment | Example | Notes |
-|---|---|---|
-| `{owner}` | `my-org` | GitHub user or organisation name |
-| `{repo}` | `instant-estimate-tool` | GitHub repository name |
-| `{version}` | `v1.2.0` | A git tag **or** a full commit SHA. A tag is recommended so you can reason about exactly what is on each client page. |
+Replace {version} with a git tag **or** a full commit SHA. Using a tag is recommended for production sites, while a commit SHA can be used for maximum stability (e.g. if you want to ensure the exact same code runs even if you later amend the tag).
 
 ### Recommended — pin to a version tag
 
 ```html
-<script src="https://cdn.jsdelivr.net/gh/my-org/instant-estimate-tool@v1.2.0/app.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/issroofing/instant-estimate-tool@v1.2.0/iq-instant-estimate.js"></script>
 ```
 
 ### Lock to an exact commit (maximum stability)
 
 ```html
-<script src="https://cdn.jsdelivr.net/gh/my-org/instant-estimate-tool@a1b2c3d4e5f6/app.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/issroofing/instant-estimate-tool@a1b2c3d4e5f6/iq-instant-estimate.js"></script>
 ```
 
 ### Always-latest (not recommended for production)
 
 ```html
-<script src="https://cdn.jsdelivr.net/gh/my-org/instant-estimate-tool@main/app.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/issroofing/instant-estimate-tool@main/iq-instant-estimate.js"></script>
 ```
 
 > **Placement:** Put the `<script>` tag wherever you want the wizard UI to appear. The wizard injects itself immediately after the script tag in the DOM. If the script cannot find itself in the DOM it appends to `<body>`.
