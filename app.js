@@ -68,7 +68,11 @@
 
 function initApp() {
     const debug = false;
+    // Suppress console.log unless debug mode is on
+    const debugLog = debug ? console.log.bind(console) : function() {};
     const MAPTILER_API_KEY = "BkQkq2NwcJAaCLNx663p";
+
+    const contactURL = '/contact'; // Base URL for contact form, will append query params
 
     // Multi-step wizard state
     let currentStep = 1;
@@ -146,9 +150,9 @@ function initApp() {
             services[cat] = Array.from(services[cat]);
         }
 
-        console.log('Parsed pricing database:', pricingDatabase);
-        console.log('Categories:', categories);
-        console.log('Services:', services);
+        debugLog('Parsed pricing database:', pricingDatabase);
+        debugLog('Categories:', categories);
+        debugLog('Services:', services);
     }
 
     // Get required variables from product formulas
@@ -1077,8 +1081,8 @@ a.iq-button {
                         <div id="iq-pricing-breakdown"></div>
                         <div class="iq-nav-buttons">
                             <button id="iq-back-step5" class="iq-button iq-button-secondary">Back</button>
-                            <button id="iq-save-estimate" class="iq-button iq-button-secondary">Save Estimate</button>
-                            <a id="iq-request-quote" href="/contact" class="iq-button">Request a Formal Quote</a>
+                            <button id="iq-save-estimate" class="iq-button iq-button-secondary">Save Estimate as PDF</button>
+                            <a id="iq-request-quote" href="/contact" target="_blank" class="iq-button">Request a Formal Quote</a>
                         </div>
                     </div>
                 </div>
@@ -1106,7 +1110,7 @@ a.iq-button {
     });
 
     if (debug === true) {
-        console.log('Debug mode enabled');
+        debugLog('Debug mode enabled');
         map.showTileBoundaries = true;
         map.showCollisionBoxes = true;
     }
@@ -1337,7 +1341,7 @@ a.iq-button {
                 const layerLabelName = selectedBuildings[i].layerLabel;
                 const perimeter = map.getSource(sourceName)._data.features[0].geometry.coordinates[0];
                 if (turf.booleanPointInPolygon([pointer.lng, pointer.lat], turf.polygon([perimeter]))) {
-                    console.log('Clicked on a selected building');
+                    debugLog('Clicked on a selected building');
                     // remove the building from the selectedBuildings array and remove the layer from the map
                     map.removeLayer(layerFillName);
                     map.removeLayer(layerOutlineName);
@@ -1364,7 +1368,7 @@ a.iq-button {
                     updateStructureListUI();
                     updateGetQuoteButton();
 
-                    console.log(selectedBuildings);
+                    debugLog(selectedBuildings);
                     return;
                 }
             }
@@ -1388,7 +1392,7 @@ a.iq-button {
 
         gc.on('pick', function (e) {
             // Log the full geocoder pick event for inspection
-            console.log('Geocoder pick event:', e);
+            debugLog('Geocoder pick event:', e);
             // Parse and store address parts
             if (e.feature && e.feature.place_name) {
                 let addr = e.feature.place_name.replace(/, United States$/, '');
@@ -1632,6 +1636,8 @@ a.iq-button {
             updateStep4Button();
         } else if (step === 5) {
             renderPricing();
+            saveEstimateData();
+            updateContactButton();
         }
 
         if (currentView && currentView !== nextView) {
@@ -1763,13 +1769,13 @@ a.iq-button {
             let roofArea = buildingArea;
             let pitchLabel = '';
             if (building.roofPitch === 'shallow') {
-                roofArea = buildingArea * 1.1;
+                roofArea = buildingArea * 1.054;
                 pitchLabel = 'Shallow pitch';
             } else if (building.roofPitch === 'medium') {
-                roofArea = buildingArea * 1.2;
+                roofArea = buildingArea * 1.202;
                 pitchLabel = 'Medium pitch';
             } else if (building.roofPitch === 'steep') {
-                roofArea = buildingArea * 1.3;
+                roofArea = buildingArea * 1.414;
                 pitchLabel = 'Steep pitch';
             }
             
@@ -1853,6 +1859,79 @@ a.iq-button {
         }
     }
 
+    function updateContactButton() {
+        // Update the "Request a Formal Quote" button with address query params
+        const requestQuoteButton = document.getElementById('iq-request-quote');
+        const params = new URLSearchParams({
+            street: selectedStreet || '',
+            city: selectedCity || '',
+            state: selectedState || '',
+            zip: selectedZip || ''
+        });
+        requestQuoteButton.href = contactURL + '?' + params.toString();
+    }
+
+    function saveEstimateData() {
+        const relevantProducts = pricingDatabase.filter(p =>
+            p.category === selectedCategory && p.service === selectedService
+        );
+
+        const entry = {
+            id: Date.now(),
+            savedAt: new Date().toLocaleString(),
+            category: selectedCategory,
+            service: selectedService,
+            address: selectedAddress,
+            street: selectedStreet,
+            city: selectedCity,
+            state: selectedState,
+            zip: selectedZip,
+            buildings: selectedBuildings.map((b, i) => {
+                const perimeterMeters = turf.length(turf.lineString(b.polygon), { units: 'meters' });
+                const perimeterFeet = perimeterMeters * 3.28084;
+
+                let roofArea = b.area;
+                if (b.roofPitch === 'shallow') roofArea = b.area * 1.054;
+                else if (b.roofPitch === 'medium') roofArea = b.area * 1.202;
+                else if (b.roofPitch === 'steep') roofArea = b.area * 1.414;
+
+                const wallArea = b.stories ? perimeterFeet * b.stories * 10 : 0;
+                const gutterLength = b.gutterPercent ? perimeterFeet * (b.gutterPercent / 100) : 0;
+                const variables = { roofArea, wallArea, gutterLength };
+
+                return {
+                    name: logicalIndex(i) + ' Structure',
+                    area: b.area,
+                    roofPitch: b.roofPitch,
+                    stories: b.stories,
+                    gutterPercent: b.gutterPercent,
+                    products: relevantProducts.map(p => ({
+                        name: p.product,
+                        priceLow: Math.floor(evaluateFormula(p.formulaLow, variables) * 100) / 100,
+                        priceHigh: Math.floor(evaluateFormula(p.formulaHigh, variables) * 100) / 100
+                    }))
+                };
+            })
+        };
+
+        // Load existing estimates
+        let estimates = [];
+        try {
+            const raw = localStorage.getItem('iq-estimates');
+            if (raw) estimates = JSON.parse(raw);
+        } catch (e) {
+            estimates = [];
+        }
+
+        // Append new estimate
+        estimates.push(entry);
+
+        // Optional: trim to last 50 estimates so storage doesn't grow forever
+        if (estimates.length > 50) estimates = estimates.slice(-50);
+
+        localStorage.setItem('iq-estimates', JSON.stringify(estimates));
+    }
+
     // Generate and save a PDF of the estimate
     // Helper: load an image as a data URL (handles cross-origin)
     function loadImageAsDataURL(src, whiteBackground) {
@@ -1916,269 +1995,278 @@ a.iq-button {
     }
 
     async function generateEstimatePDF() {
-        const { jsPDF } = window.jspdf;
-        const pdf = new jsPDF('p', 'pt', 'letter');
-        const pageWidth = pdf.internal.pageSize.getWidth();
-        const pageHeight = pdf.internal.pageSize.getHeight();
-        const margin = 40;
-        const contentWidth = pageWidth - margin * 2;
-        let y = margin;
 
-        // Helper: add a new page if needed
-        function checkPage(needed) {
-            if (y + needed > pageHeight - margin) {
-                pdf.addPage();
-                y = margin;
-            }
-        }
+        try {
+            saveEstimateButton.disabled = true;
+            saveEstimateButton.textContent = 'Saving...';
 
-        // --- Pre-load all product images in parallel ---
-        const relevantProducts = pricingDatabase.filter(p =>
-            p.category === selectedCategory && p.service === selectedService
-        );
-        const productImageCache = {};
-        await Promise.all(relevantProducts.map(async (product) => {
-            if (product.productThumb) {
-                productImageCache[product.productThumb] = await loadImageAsDataURL(product.productThumb);
-            }
-        }));
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF('p', 'pt', 'letter');
+            const pageWidth = pdf.internal.pageSize.getWidth();
+            const pageHeight = pdf.internal.pageSize.getHeight();
+            const margin = 40;
+            const contentWidth = pageWidth - margin * 2;
+            let y = margin;
 
-        // --- Company header ---
-        const logoHeight = 40;
-        if (companyInfo.logo) {
-            try {
-                const logoData = await loadImageAsDataURL(companyInfo.logo, true);
-                if (logoData) {
-                    const img = new Image();
-                    img.src = logoData;
-                    await new Promise(r => { img.onload = r; });
-                    const aspect = img.naturalWidth / img.naturalHeight;
-                    const logoW = logoHeight * aspect;
-                    pdf.addImage(logoData, 'JPEG', margin, y, logoW, logoHeight);
+            // Helper: add a new page if needed
+            function checkPage(needed) {
+                if (y + needed > pageHeight - margin) {
+                    pdf.addPage();
+                    y = margin;
                 }
-            } catch (e) {
-                // Logo failed to load, skip it
-            }
-        }
-
-        // Company info text (right-aligned)
-        pdf.setFontSize(9);
-        pdf.setTextColor(99, 113, 130); // #637182
-        const infoLines = [
-            companyInfo.street,
-            companyInfo.cityStateZip,
-            companyInfo.phone,
-            companyInfo.email,
-            companyInfo.website,
-            companyInfo.license
-        ].filter(Boolean);
-        infoLines.forEach((line, i) => {
-            pdf.text(line, pageWidth - margin, y + 10 + i * 13, { align: 'right' });
-        });
-
-        y += Math.max(logoHeight, infoLines.length * 13) + 20;
-
-        // Divider line
-        pdf.setDrawColor(228, 232, 237); // #e4e8ed
-        pdf.setLineWidth(0.5);
-        pdf.line(margin, y, pageWidth - margin, y);
-        y += 30;
-
-        // --- Title ---
-        pdf.setFontSize(20);
-        pdf.setTextColor(14, 16, 18); // #0e1012
-        pdf.setFont(undefined, 'bold');
-        const titleText = `Instant ${selectedService || ''} Estimate`;
-        pdf.text(titleText, margin, y);
-        y += 30;
-
-        // Subtitle (Address)
-        pdf.setFontSize(11);
-        pdf.setTextColor(99, 113, 130); // #637182
-        pdf.setFont(undefined, 'normal');
-        if (selectedStreet && selectedCity && selectedState) {
-            pdf.text(selectedStreet, margin, y);
-            y += 14;
-            pdf.text(`${selectedCity}, ${selectedState} ${selectedZip}`, margin, y);
-            y += 20;
-        } else if (selectedAddress) {
-            let addr = selectedAddress.replace(/, United States$/, '');
-            const parts = addr.split(',').map(s => s.trim());
-            const street = parts[0] || '';
-            const city = parts[1] || '';
-            const stateZip = parts[2] || '';
-            pdf.text(street, margin, y);
-            y += 14;
-            pdf.text(`${city}, ${stateZip}`, margin, y);
-            y += 20;
-        } else {
-            pdf.text('Your Estimate', margin, y);
-            y += 20;
-        }
-
-        // Date
-        const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-        pdf.setFontSize(10);
-        pdf.setTextColor(99, 113, 130);
-        pdf.text(dateStr, margin, y);
-        y += 10;
-        y += 10;
-
-        // --- Structures ---
-        for (let i = 0; i < selectedBuildings.length; i++) {
-            const building = selectedBuildings[i];
-            const buildingArea = building.area;
-            const perimeterMeters = turf.length(turf.lineString(building.polygon), { units: 'meters' });
-            const perimeterFeet = perimeterMeters * 3.28084;
-
-            let roofArea = buildingArea;
-            let pitchLabel = '';
-            if (building.roofPitch === 'shallow') { roofArea = buildingArea * 1.1; pitchLabel = 'Shallow pitch'; }
-            else if (building.roofPitch === 'medium') { roofArea = buildingArea * 1.2; pitchLabel = 'Medium pitch'; }
-            else if (building.roofPitch === 'steep') { roofArea = buildingArea * 1.3; pitchLabel = 'Steep pitch'; }
-
-            let wallArea = 0, storiesLabel = '';
-            if (building.stories) {
-                wallArea = perimeterFeet * building.stories * 10;
-                storiesLabel = building.stories + (building.stories === 1 ? ' story' : ' stories');
             }
 
-            let gutterLength = 0, gutterLabel = '';
-            if (building.gutterPercent) {
-                gutterLength = perimeterFeet * (building.gutterPercent / 100);
-                gutterLabel = building.gutterPercent + '% coverage';
-            }
+            // --- Pre-load all product images in parallel ---
+            const relevantProducts = pricingDatabase.filter(p =>
+                p.category === selectedCategory && p.service === selectedService
+            );
+            const productImageCache = {};
+            await Promise.all(relevantProducts.map(async (product) => {
+                if (product.productThumb) {
+                    productImageCache[product.productThumb] = await loadImageAsDataURL(product.productThumb);
+                }
+            }));
 
-            const variables = { roofArea, wallArea, gutterLength };
-            const areaSqft = Math.round(buildingArea).toLocaleString();
-            let detailParts = [areaSqft + ' ft²'];
-            if (pitchLabel) detailParts.push(pitchLabel);
-            if (storiesLabel) detailParts.push(storiesLabel);
-            if (gutterLabel) detailParts.push(gutterLabel);
-            const detailString = detailParts.join(' · ');
-
-            // --- Thumbnail map capture + structure header (inline) ---
-            const thumbnailEl = document.getElementById('pricing-structure-thumbnail-' + i);
-            const mapThumbSize = 56;
-            let mapThumbData = null;
-            if (thumbnailEl) {
+            // --- Company header ---
+            const logoHeight = 60;
+            if (companyInfo.logo) {
                 try {
-                    const miniMap = miniMaps.find(m => m.getContainer().parentElement === thumbnailEl || m.getContainer() === thumbnailEl);
-                    if (miniMap) {
-                        miniMap.triggerRepaint();
-                        await new Promise(r => miniMap.once('render', r));
-                        
-                        const glCanvas = miniMap.getCanvas();
-                        const composite = document.createElement('canvas');
-                        composite.width = glCanvas.width;
-                        composite.height = glCanvas.height;
-                        const ctx = composite.getContext('2d');
-                        ctx.drawImage(glCanvas, 0, 0);
-                        
-                        const imgData = composite.toDataURL('image/png');
-                        mapThumbData = await roundImageCorners(imgData, 6);
+                    const logoData = await loadImageAsDataURL(companyInfo.logo, true);
+                    if (logoData) {
+                        const img = new Image();
+                        img.src = logoData;
+                        await new Promise(r => { img.onload = r; });
+                        const aspect = img.naturalWidth / img.naturalHeight;
+                        const logoW = logoHeight * aspect;
+                        pdf.addImage(logoData, 'JPEG', margin, y, logoW, logoHeight);
                     }
-                } catch (e) { /* skip */ }
+                } catch (e) {
+                    // Logo failed to load, skip it
+                }
             }
 
-            checkPage(mapThumbSize + 30);
+            // Company info text (right-aligned)
+            pdf.setFontSize(9);
+            pdf.setTextColor(99, 113, 130); // #637182
+            const infoLines = [
+                companyInfo.street,
+                companyInfo.cityStateZip,
+                companyInfo.phone,
+                companyInfo.email,
+                companyInfo.website,
+                companyInfo.license
+            ].filter(Boolean);
+            infoLines.forEach((line, i) => {
+                pdf.text(line, pageWidth - margin, y + 10 + i * 13, { align: 'right' });
+            });
 
-            // Draw thumbnail + structure header on same line
-            const headerY = y;
-            if (mapThumbData) {
-                pdf.addImage(mapThumbData, 'PNG', margin, y, mapThumbSize, mapThumbSize);
-            }
-            const textX = mapThumbData ? margin + mapThumbSize + 12 : margin;
+            y += Math.max(logoHeight, infoLines.length * 13) + 20;
 
-            // Structure name
-            pdf.setFontSize(14);
-            pdf.setTextColor(14, 16, 18);
+            // Divider line
+            pdf.setDrawColor(228, 232, 237); // #e4e8ed
+            pdf.setLineWidth(0.5);
+            pdf.line(margin, y, pageWidth - margin, y);
+            y += 30;
+
+            // --- Title ---
+            pdf.setFontSize(20);
+            pdf.setTextColor(14, 16, 18); // #0e1012
             pdf.setFont(undefined, 'bold');
-            pdf.text(logicalIndex(i) + ' Structure', textX, y + 16);
+            const titleText = `Instant ${selectedService || ''} Estimate`;
+            pdf.text(titleText, margin, y);
+            y += 30;
 
-            // Structure details
+            // Subtitle (Address)
+            pdf.setFontSize(11);
+            pdf.setTextColor(99, 113, 130); // #637182
+            pdf.setFont(undefined, 'normal');
+            if (selectedStreet && selectedCity && selectedState) {
+                pdf.text(selectedStreet, margin, y);
+                y += 14;
+                pdf.text(`${selectedCity}, ${selectedState} ${selectedZip}`, margin, y);
+                y += 20;
+            } else if (selectedAddress) {
+                let addr = selectedAddress.replace(/, United States$/, '');
+                const parts = addr.split(',').map(s => s.trim());
+                const street = parts[0] || '';
+                const city = parts[1] || '';
+                const stateZip = parts[2] || '';
+                pdf.text(street, margin, y);
+                y += 14;
+                pdf.text(`${city}, ${stateZip}`, margin, y);
+                y += 20;
+            } else {
+                pdf.text('Your Estimate', margin, y);
+                y += 20;
+            }
+
+            // Date
+            const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
             pdf.setFontSize(10);
             pdf.setTextColor(99, 113, 130);
-            pdf.setFont(undefined, 'normal');
-            pdf.text(detailString, textX, y + 32);
+            pdf.text(dateStr, margin, y);
+            y += 10;
+            y += 10;
 
-            y += mapThumbSize + 8;
+            // --- Structures ---
+            for (let i = 0; i < selectedBuildings.length; i++) {
+                const building = selectedBuildings[i];
+                const buildingArea = building.area;
+                const perimeterMeters = turf.length(turf.lineString(building.polygon), { units: 'meters' });
+                const perimeterFeet = perimeterMeters * 3.28084;
 
-            // Divider
-            pdf.setDrawColor(228, 232, 237);
-            pdf.line(margin, y, pageWidth - margin, y);
-            y += 14;
+                let roofArea = buildingArea;
+                let pitchLabel = '';
+                if (building.roofPitch === 'shallow') { roofArea = buildingArea * 1.1; pitchLabel = 'Shallow pitch'; }
+                else if (building.roofPitch === 'medium') { roofArea = buildingArea * 1.2; pitchLabel = 'Medium pitch'; }
+                else if (building.roofPitch === 'steep') { roofArea = buildingArea * 1.3; pitchLabel = 'Steep pitch'; }
 
-            // --- Products ---
-            for (let optionIndex = 0; optionIndex < relevantProducts.length; optionIndex++) {
-                const product = relevantProducts[optionIndex];
-                const priceLow = evaluateFormula(product.formulaLow, variables);
-                const priceHigh = evaluateFormula(product.formulaHigh, variables);
-                const fmt = v => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(v);
+                let wallArea = 0, storiesLabel = '';
+                if (building.stories) {
+                    wallArea = perimeterFeet * building.stories * 10;
+                    storiesLabel = building.stories + (building.stories === 1 ? ' story' : ' stories');
+                }
 
-                const thumbSize = 44;
-                const cardPadding = 12;
-                const descLines = product.description ? pdf.splitTextToSize(product.description, contentWidth - thumbSize - cardPadding * 3 - 10) : [];
-                const cardHeight = Math.max(thumbSize + cardPadding * 2, 36 + descLines.length * 11);
-                checkPage(cardHeight + 26);
+                let gutterLength = 0, gutterLabel = '';
+                if (building.gutterPercent) {
+                    gutterLength = perimeterFeet * (building.gutterPercent / 100);
+                    gutterLabel = building.gutterPercent + '% coverage';
+                }
 
-                // Option label
-                pdf.setFontSize(10);
-                pdf.setTextColor(74, 93, 116); // #4a5d74
-                pdf.setFont(undefined, 'bold');
-                pdf.text('Option ' + (optionIndex + 1), margin, y);
-                y += 16;
+                const variables = { roofArea, wallArea, gutterLength };
+                const areaSqft = Math.round(buildingArea).toLocaleString();
+                let detailParts = [areaSqft + ' ft²'];
+                if (pitchLabel) detailParts.push(pitchLabel);
+                if (storiesLabel) detailParts.push(storiesLabel);
+                if (gutterLabel) detailParts.push(gutterLabel);
+                const detailString = detailParts.join(' · ');
 
-                // Product card background
-                pdf.setFillColor(242, 244, 248); // #f2f4f8
-                pdf.roundedRect(margin, y - 10, contentWidth, cardHeight, 6, 6, 'F');
-
-                // Product thumbnail image
-                const productImgData = productImageCache[product.productThumb];
-                const textLeft = margin + cardPadding;
-                if (productImgData) {
+                // --- Thumbnail map capture + structure header (inline) ---
+                const thumbnailEl = document.getElementById('pricing-structure-thumbnail-' + i);
+                const mapThumbSize = 56;
+                let mapThumbData = null;
+                if (thumbnailEl) {
                     try {
-                        const roundedProduct = await roundImageCorners(productImgData, 6);
-                        pdf.addImage(roundedProduct, 'PNG', margin + cardPadding, y - 10 + cardPadding, thumbSize, thumbSize);
+                        const miniMap = miniMaps.find(m => m.getContainer().parentElement === thumbnailEl || m.getContainer() === thumbnailEl);
+                        if (miniMap) {
+                            miniMap.triggerRepaint();
+                            await new Promise(r => miniMap.once('render', r));
+                            
+                            const glCanvas = miniMap.getCanvas();
+                            const composite = document.createElement('canvas');
+                            composite.width = glCanvas.width;
+                            composite.height = glCanvas.height;
+                            const ctx = composite.getContext('2d');
+                            ctx.drawImage(glCanvas, 0, 0);
+                            
+                            const imgData = composite.toDataURL('image/png');
+                            mapThumbData = await roundImageCorners(imgData, 6);
+                        }
                     } catch (e) { /* skip */ }
                 }
-                const textX = productImgData ? margin + cardPadding + thumbSize + 10 : margin + cardPadding;
-                const textMaxWidth = contentWidth - (textX - margin) - cardPadding;
 
-                // Product name
-                pdf.setFontSize(11);
+                checkPage(mapThumbSize + 30);
+
+                // Draw thumbnail + structure header on same line
+                const headerY = y;
+                if (mapThumbData) {
+                    pdf.addImage(mapThumbData, 'PNG', margin, y, mapThumbSize, mapThumbSize);
+                }
+                const textX = mapThumbData ? margin + mapThumbSize + 12 : margin;
+
+                // Structure name
+                pdf.setFontSize(14);
                 pdf.setTextColor(14, 16, 18);
                 pdf.setFont(undefined, 'bold');
-                pdf.text(product.product, textX, y + 4);
+                pdf.text(logicalIndex(i) + ' Structure', textX, y + 16);
 
-                // Price (right-aligned)
-                pdf.setTextColor(0, 122, 255); // #007aff
-                pdf.text(fmt(priceLow) + ' - ' + fmt(priceHigh), pageWidth - margin - cardPadding, y + 4, { align: 'right' });
+                // Structure details
+                pdf.setFontSize(10);
+                pdf.setTextColor(99, 113, 130);
+                pdf.setFont(undefined, 'normal');
+                pdf.text(detailString, textX, y + 32);
 
-                if (product.description) {
-                    pdf.setFontSize(9);
-                    pdf.setFont(undefined, 'normal');
-                    pdf.setTextColor(99, 113, 130);
-                    pdf.text(descLines, textX, y + 20);
+                y += mapThumbSize + 8;
+
+                // Divider
+                pdf.setDrawColor(228, 232, 237);
+                pdf.line(margin, y, pageWidth - margin, y);
+                y += 14;
+
+                // --- Products ---
+                for (let optionIndex = 0; optionIndex < relevantProducts.length; optionIndex++) {
+                    const product = relevantProducts[optionIndex];
+                    const priceLow = evaluateFormula(product.formulaLow, variables);
+                    const priceHigh = evaluateFormula(product.formulaHigh, variables);
+                    const fmt = v => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(v);
+
+                    const thumbSize = 44;
+                    const cardPadding = 12;
+                    const descLines = product.description ? pdf.splitTextToSize(product.description, contentWidth - thumbSize - cardPadding * 3 - 10) : [];
+                    const cardHeight = Math.max(thumbSize + cardPadding * 2, 36 + descLines.length * 11);
+                    checkPage(cardHeight + 26);
+
+                    // Option label
+                    pdf.setFontSize(10);
+                    pdf.setTextColor(74, 93, 116); // #4a5d74
+                    pdf.setFont(undefined, 'bold');
+                    pdf.text('Option ' + (optionIndex + 1), margin, y);
+                    y += 16;
+
+                    // Product card background
+                    pdf.setFillColor(242, 244, 248); // #f2f4f8
+                    pdf.roundedRect(margin, y - 10, contentWidth, cardHeight, 6, 6, 'F');
+
+                    // Product thumbnail image
+                    const productImgData = productImageCache[product.productThumb];
+                    const textLeft = margin + cardPadding;
+                    if (productImgData) {
+                        try {
+                            const roundedProduct = await roundImageCorners(productImgData, 6);
+                            pdf.addImage(roundedProduct, 'PNG', margin + cardPadding, y - 10 + cardPadding, thumbSize, thumbSize);
+                        } catch (e) { /* skip */ }
+                    }
+                    const textX = productImgData ? margin + cardPadding + thumbSize + 10 : margin + cardPadding;
+                    const textMaxWidth = contentWidth - (textX - margin) - cardPadding;
+
+                    // Product name
+                    pdf.setFontSize(11);
+                    pdf.setTextColor(14, 16, 18);
+                    pdf.setFont(undefined, 'bold');
+                    pdf.text(product.product, textX, y + 4);
+
+                    // Price (right-aligned)
+                    pdf.setTextColor(0, 122, 255); // #007aff
+                    pdf.text(fmt(priceLow) + ' - ' + fmt(priceHigh), pageWidth - margin - cardPadding, y + 4, { align: 'right' });
+
+                    if (product.description) {
+                        pdf.setFontSize(9);
+                        pdf.setFont(undefined, 'normal');
+                        pdf.setTextColor(99, 113, 130);
+                        pdf.text(descLines, textX, y + 20);
+                    }
+
+                    y += cardHeight + 8;
                 }
 
-                y += cardHeight + 8;
+                y += 20; // spacing between structures
             }
 
-            y += 20; // spacing between structures
+            // --- Disclaimer ---
+            checkPage(50);
+            pdf.setFontSize(8);
+            pdf.setTextColor(150, 160, 175);
+            pdf.setFont(undefined, 'italic');
+            const disclaimer = 'This estimate is for informational purposes only and does not constitute a binding quote or contract. Please contact us for a detailed quote.';
+            pdf.text(disclaimer, margin, y, { maxWidth: contentWidth });
+
+            // Save
+            const filename = 'Estimate - ' + (selectedService || 'Quote') + ' - ' + companyInfo.name + ' - ' + dateStr + '.pdf';
+            pdf.save(filename);
+         } finally {
+            saveEstimateButton.disabled = false;
+            saveEstimateButton.textContent = 'Save Estimate as PDF';
         }
-
-        // --- Disclaimer ---
-        checkPage(50);
-        pdf.setFontSize(8);
-        pdf.setTextColor(150, 160, 175);
-        pdf.setFont(undefined, 'italic');
-        const disclaimer = 'This estimate is for informational purposes only and does not constitute a binding quote or contract. Final pricing may vary based on site inspection and material availability.';
-        pdf.text(disclaimer, margin, y, { maxWidth: contentWidth });
-
-        // Save
-        const filename = 'Estimate - ' + (selectedService || 'Quote') + ' - ' + dateStr + '.pdf';
-        pdf.save(filename);
     }
 
 
@@ -2436,7 +2524,7 @@ a.iq-button {
                         }
                         
                         selectedBuildings[structureIndex][field] = value;
-                        console.log('Updated building', structureIndex, field, value);
+                        debugLog('Updated building', structureIndex, field, value);
                         updateStep4Button();
                     });
                 });
@@ -2508,7 +2596,7 @@ a.iq-button {
 
             const tileURL = 'https://api.maptiler.com/tiles/v3/' + z + '/' + x + '/' + y + '.pbf?key=' + MAPTILER_API_KEY;
     
-            console.log('Loading tile ' + x + ', ' + y + ' at zoom ' + z + ' from ' + tileURL);
+            debugLog('Loading tile ' + x + ', ' + y + ' at zoom ' + z + ' from ' + tileURL);
             
             const tileName = 'tile-' + x + '-' + y + '-' + z;
 
@@ -2810,8 +2898,21 @@ a.iq-button {
         return merged;
     }
 
-    // Initialize step 1
-    renderCategories();
+    // Check URL query params for a pre-selected service category
+    const urlParams = new URLSearchParams(window.location.search);
+    const preselectedCategory = urlParams.get('service-category');
+    const matchedCategory = preselectedCategory
+        ? categories.find(c => c.toLowerCase() === preselectedCategory.toLowerCase())
+        : null;
+
+    if (matchedCategory) {
+        // Skip step 1 and jump straight to step 2
+        selectedCategory = matchedCategory;
+        goToStep(2);
+    } else {
+        // Initialize step 1
+        renderCategories();
+    }
 
 }
 })();
