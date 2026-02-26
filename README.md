@@ -34,7 +34,7 @@ Replace {version} with a git tag **or** a full commit SHA. Using a tag is recomm
 <script src="https://cdn.jsdelivr.net/gh/issroofing/instant-estimate-tool@main/iq-instant-estimate.js"></script>
 ```
 
-> **Placement:** Put the `<script>` tag wherever you want the wizard UI to appear. The wizard injects itself immediately after the script tag in the DOM. If the script cannot find itself in the DOM it appends to `<body>`.
+> **Placement:** Add `<div id="iqMain"></div>` wherever you want the wizard UI to appear. The script injects its UI into this element. If no `#iqMain` element is found, the wizard falls back to appending to `<body>`.
 
 ---
 
@@ -172,7 +172,9 @@ Used to populate the PDF estimate header. Can be `display:none`. All fields are 
     </div>
   </div>
 
-  <!-- The wizard UI is injected immediately after this script tag -->
+  <!-- The wizard UI is injected into this element -->
+  <div id="iqMain"></div>
+
   <script src="https://cdn.jsdelivr.net/gh/my-org/instant-estimate-tool@v1.2.0/app.js"></script>
 
 </body>
