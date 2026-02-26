@@ -988,10 +988,10 @@ a.iq-button {
         const wrapper = document.createElement('div');
         wrapper.id = 'iq-wrapper';
 
-        // Inject into the designated host element
-        const host = document.getElementById('iqMain');
-        if (host) {
-            host.appendChild(wrapper);
+        // Insert directly after the script tag that loaded this file
+        const scriptTag = document.querySelector('script[src*="app.js"]');
+        if (scriptTag && scriptTag.parentNode) {
+            scriptTag.parentNode.insertBefore(wrapper, scriptTag.nextSibling);
         } else {
             document.body.appendChild(wrapper);
         }
@@ -1866,7 +1866,8 @@ a.iq-button {
             street: selectedStreet || '',
             city: selectedCity || '',
             state: selectedState || '',
-            zip: selectedZip || ''
+            zip: selectedZip || '',
+            category: (selectedCategory || '').toLowerCase()
         });
         requestQuoteButton.href = contactURL + '?' + params.toString();
     }

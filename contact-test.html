@@ -24,7 +24,15 @@
         <input type="text" id="state" name="state" required>
 
         <label for="zip">ZIP Code:</label>
-        <input type="text" id="zip" name="zip" required>
+        <input id="zip" required>
+
+        <label for="category">Category:</label>
+        <select id="category" name="category" required>
+            <option value="">Select a category</option>
+            <option value="roofing">Roofing</option>
+            <option value="siding">Siding</option>
+            <option value="gutters">Gutters</option>
+        </select>
 
         <label for="message">Message:</label>
         <textarea id="message" name="message" rows="5" required></textarea>
@@ -38,19 +46,14 @@
     <script>
         function queryParamAutoFill() {
             const params = new URLSearchParams(window.location.search);
-            const map = {
-                name: 'name',
-                email: 'email',
-                phone: 'phone',
-                street: 'street',
-                city: 'city',
-                state: 'state',
-                zip: 'zip'
-            };
-            for (const [param, fieldId] of Object.entries(map)) {
-                const value = params.get(param);
-                if (value) document.getElementById(fieldId).value = value;
-            }
+            if (params.has('name')) document.getElementById('name').value = params.get('name');
+            if (params.has('email')) document.getElementById('email').value = params.get('email');
+            if (params.has('street')) document.getElementById('street').value = params.get('street');
+            if (params.has('city')) document.getElementById('city').value = params.get('city');
+            if (params.has('state')) document.getElementById('state').value = params.get('state');
+            if (params.has('zip')) document.getElementById('zip').value = params.get('zip');
+            if (params.has('category')) document.getElementById('category').value = params.get('category');
+            if (params.has('message')) document.getElementById('message').value = params.get('message');
         }
         queryParamAutoFill();
     </script>
