@@ -988,10 +988,10 @@ a.iq-button {
         const wrapper = document.createElement('div');
         wrapper.id = 'iq-wrapper';
 
-        // Insert directly after the script tag that loaded this file
-        const scriptTag = document.querySelector('script[src*="app.js"]');
-        if (scriptTag && scriptTag.parentNode) {
-            scriptTag.parentNode.insertBefore(wrapper, scriptTag.nextSibling);
+        // Inject into the designated host element
+        const host = document.getElementById('iqMain');
+        if (host) {
+            host.appendChild(wrapper);
         } else {
             document.body.appendChild(wrapper);
         }
