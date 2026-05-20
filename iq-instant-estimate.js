@@ -4,11 +4,12 @@
 (function() {
     const dependencies = {
         styles: [
-            'https://cdn.jsdelivr.net/npm/maplibre-gl@4.3.2/dist/maplibre-gl.css'
+            'https://cdn.jsdelivr.net/npm/maplibre-gl@4.3.2/dist/maplibre-gl.css',
+            'https://cdn.jsdelivr.net/npm/@maptiler/geocoding-control@2.1.6/style.css'
         ],
         scripts: [
             'https://cdn.jsdelivr.net/npm/maplibre-gl@4.3.2/dist/maplibre-gl.js',
-            'https://cdn.jsdelivr.net/npm/@maptiler/geocoding-control@3.0.0/dist/maplibregl.umd.js',
+            'https://cdn.jsdelivr.net/npm/@maptiler/geocoding-control@2.1.6/maplibregl.umd.js',
             'https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js',
             'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js'
         ]
