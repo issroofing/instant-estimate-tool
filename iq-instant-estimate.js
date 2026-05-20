@@ -4,14 +4,13 @@
 (function() {
     const dependencies = {
         styles: [
-            'https://unpkg.com/maplibre-gl@4.3.2/dist/maplibre-gl.css',
-            'https://unpkg.com/@maptiler/geocoding-control@latest/style.css'
+            'https://cdn.jsdelivr.net/npm/maplibre-gl@4.3.2/dist/maplibre-gl.css'
         ],
         scripts: [
-            'https://unpkg.com/maplibre-gl@4.3.2/dist/maplibre-gl.js',
-            'https://unpkg.com/@maptiler/geocoding-control@latest/maplibregl.umd.js',
-            'https://unpkg.com/@turf/turf@6.5.0/turf.min.js',
-            'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
+            'https://cdn.jsdelivr.net/npm/maplibre-gl@4.3.2/dist/maplibre-gl.js',
+            'https://cdn.jsdelivr.net/npm/@maptiler/geocoding-control@3.0.0/dist/maplibregl.umd.js',
+            'https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js',
+            'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js'
         ]
     };
 
